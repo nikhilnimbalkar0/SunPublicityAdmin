@@ -1,0 +1,1119 @@
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  collection,
+  onSnapshot,
+  doc,
+  updateDoc,
+  deleteDoc,
+  addDoc,
+  serverTimestamp,
+  query,
+  orderBy
+} from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { db, storage } from '../config/firebase';
+import {
+  Building2,
+  Plus,
+  Edit2,
+  Trash2,
+  Save,
+  Loader,
+  X,
+  Search,
+  MapPin,
+  IndianRupee,
+  Maximize2,
+  Image as ImageIcon,
+  Star,
+  TrendingUp,
+  Eye,
+  Tag,
+  Zap,
+  Calendar,
+  CheckCircle,
+  AlertCircle,
+  Upload,
+  Filter
+} from 'lucide-react';
+import Card from '../components/Card';
+import LoadingSpinner from '../components/LoadingSpinner';
+
+const ManageHoardings = () => {
+  // State Management
+  const [hoardings, setHoardings] = useState([]);
+  const [filteredHoardings, setFilteredHoardings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showModal, setShowModal] = useState(false);
+  const [editingHoarding, setEditingHoarding] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [message, setMessage] = useState({ type: '', text: '' });
+
+  // Form State with Advanced Features
+  const [formData, setFormData] = useState({
+    title: '',
+    location: '',
+    latitude: '',
+    longitude: '',
+    size: '',
+    price: '',
+    availability: true,
+    imageUrl: '',
+    // Advanced Features
+    visibilityScore: 85,
+    rating: 0,
+    tags: [],
+    bookingRate: 'medium',
+    views: 0,
+    trending: false,
+    description: '',
+    category: 'billboard'
+  });
+
+  // Filter State
+  const [filters, setFilters] = useState({
+    minPrice: '',
+    maxPrice: '',
+    availability: 'all',
+    category: 'all',
+    minRating: 0,
+    trending: false
+  });
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 9;
+
+  // Available Tags
+  const availableTags = ['New', 'Discount', 'Premium', 'Hot Deal', 'Limited'];
+  const categories = ['billboard', 'digital', 'transit', 'street', 'mall'];
+  const bookingRates = ['low', 'medium', 'high'];
+
+  // Real-time Data Fetching with onSnapshot
+  useEffect(() => {
+    const q = query(collection(db, 'hoardings'), orderBy('createdAt', 'desc'));
+
+    const unsubscribe = onSnapshot(q,
+      (snapshot) => {
+        const hoardingsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setHoardings(hoardingsData);
+        setFilteredHoardings(hoardingsData);
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Error fetching hoardings:', error);
+        showMessage('error', 'Failed to fetch hoardings');
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  // Search and Filter Logic
+  useEffect(() => {
+    let result = hoardings;
+
+    // Search
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      result = result.filter(h =>
+        h.title?.toLowerCase().includes(term) ||
+        h.location?.toLowerCase().includes(term) ||
+        h.description?.toLowerCase().includes(term)
+      );
+    }
+
+    // Price Filter
+    if (filters.minPrice) {
+      result = result.filter(h => h.price >= Number(filters.minPrice));
+    }
+    if (filters.maxPrice) {
+      result = result.filter(h => h.price <= Number(filters.maxPrice));
+    }
+
+    // Availability Filter
+    if (filters.availability !== 'all') {
+      const isAvailable = filters.availability === 'available';
+      result = result.filter(h => (h.availability !== false) === isAvailable);
+    }
+
+    // Category Filter
+    if (filters.category !== 'all') {
+      result = result.filter(h => h.category === filters.category);
+    }
+
+    // Rating Filter
+    if (filters.minRating > 0) {
+      result = result.filter(h => (h.rating || 0) >= filters.minRating);
+    }
+
+    // Trending Filter
+    if (filters.trending) {
+      result = result.filter(h => h.trending === true);
+    }
+
+    setFilteredHoardings(result);
+    setCurrentPage(1);
+  }, [searchTerm, hoardings, filters]);
+
+  // Pagination
+  const totalPages = Math.ceil(filteredHoardings.length / itemsPerPage);
+  const paginatedHoardings = filteredHoardings.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  // Message Display
+  const showMessage = (type, text) => {
+    setMessage({ type, text });
+    setTimeout(() => setMessage({ type: '', text: '' }), 5000);
+  };
+
+  // Image Handling
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      console.log('File selected:', file.name, file.size, file.type);
+
+      // Validate file size (5MB max)
+      if (file.size > 5 * 1024 * 1024) {
+        showMessage('error', 'Image size should be less than 5MB');
+        return;
+      }
+
+      // Validate file type
+      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+      if (!validTypes.includes(file.type)) {
+        showMessage('error', 'Please upload a valid image file (JPEG, PNG, or WebP)');
+        return;
+      }
+
+      setImageFile(file);
+      const previewUrl = URL.createObjectURL(file);
+      setImagePreview(previewUrl);
+      console.log('Image preview created:', previewUrl);
+      showMessage('success', 'Image selected successfully');
+    }
+  };
+
+  // Upload Image to Firebase Storage
+  const uploadImage = async () => {
+    if (!imageFile) {
+      console.log('No new image file, returning existing URL:', formData.imageUrl);
+      return formData.imageUrl || '';
+    }
+
+    try {
+      setUploading(true);
+      console.log('Starting image upload...');
+
+      const timestamp = Date.now();
+      const sanitizedFileName = imageFile.name.replace(/[^a-zA-Z0-9.]/g, '_');
+      const uniqueFileName = `${timestamp}_${sanitizedFileName}`;
+
+      console.log('Uploading to path:', `hoardings/${uniqueFileName}`);
+      const storageRef = ref(storage, `hoardings/${uniqueFileName}`);
+
+      console.log('Uploading bytes...');
+      const uploadResult = await uploadBytes(storageRef, imageFile);
+      console.log('Upload successful:', uploadResult.metadata.fullPath);
+
+      console.log('Getting download URL...');
+      const downloadURL = await getDownloadURL(storageRef);
+      console.log('Download URL obtained:', downloadURL);
+
+      showMessage('success', '✅ Image uploaded successfully');
+      return downloadURL;
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      console.error('Error code:', error.code);
+      console.error('Error message:', error.message);
+
+      if (error.code === 'storage/unauthorized') {
+        showMessage('error', '❌ Permission denied: Please check Firebase Storage rules');
+        throw new Error('Permission denied');
+      } else if (error.code === 'storage/canceled') {
+        showMessage('error', '❌ Upload canceled');
+        throw new Error('Upload canceled');
+      } else {
+        showMessage('error', `❌ Upload failed: ${error.message}`);
+        throw new Error(`Failed to upload image: ${error.message}`);
+      }
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Delete Image from Storage
+  const deleteImageFromStorage = async (imageUrl) => {
+    if (!imageUrl || !imageUrl.includes('firebasestorage.googleapis.com')) {
+      console.log('No valid Firebase Storage URL to delete');
+      return;
+    }
+
+    try {
+      console.log('Deleting image from storage:', imageUrl);
+      const decodedUrl = decodeURIComponent(imageUrl);
+      const pathMatch = decodedUrl.match(/\/o\/(.+?)\?/);
+
+      if (pathMatch && pathMatch[1]) {
+        const filePath = pathMatch[1];
+        console.log('Extracted file path:', filePath);
+        const imageRef = ref(storage, filePath);
+        await deleteObject(imageRef);
+        console.log('Image deleted successfully');
+      }
+    } catch (error) {
+      console.log('Error deleting image:', error.message);
+      // Don't throw error, just log it
+    }
+  };
+
+  // Form Handlers
+  const handleAddHoarding = () => {
+    setEditingHoarding(null);
+    setFormData({
+      title: '',
+      location: '',
+      latitude: '',
+      longitude: '',
+      size: '',
+      price: '',
+      availability: true,
+      imageUrl: '',
+      visibilityScore: 85,
+      rating: 0,
+      tags: [],
+      bookingRate: 'medium',
+      views: 0,
+      trending: false,
+      description: '',
+      category: 'billboard'
+    });
+    setImageFile(null);
+    setImagePreview(null);
+    setShowModal(true);
+  };
+
+  const handleEdit = (hoarding) => {
+    setEditingHoarding(hoarding);
+    setFormData({
+      title: hoarding.title || '',
+      location: hoarding.location || '',
+      latitude: hoarding.latitude || '',
+      longitude: hoarding.longitude || '',
+      size: hoarding.size || '',
+      price: hoarding.price || '',
+      availability: hoarding.availability !== false,
+      imageUrl: hoarding.imageUrl || '',
+      visibilityScore: hoarding.visibilityScore || 85,
+      rating: hoarding.rating || 0,
+      tags: hoarding.tags || [],
+      bookingRate: hoarding.bookingRate || 'medium',
+      views: hoarding.views || 0,
+      trending: hoarding.trending || false,
+      description: hoarding.description || '',
+      category: hoarding.category || 'billboard'
+    });
+    setImagePreview(hoarding.imageUrl || null);
+    setImageFile(null);
+    setShowModal(true);
+  };
+
+  const handleDelete = async (hoarding) => {
+    if (!window.confirm('Are you sure you want to delete this hoarding?')) return;
+
+    try {
+      // Delete image from storage
+      if (hoarding.imageUrl) {
+        await deleteImageFromStorage(hoarding.imageUrl);
+      }
+
+      // Delete document from Firestore
+      await deleteDoc(doc(db, 'hoardings', hoarding.id));
+      showMessage('success', 'Hoarding deleted successfully');
+    } catch (error) {
+      console.error('Error deleting hoarding:', error);
+      showMessage('error', `Failed to delete hoarding: ${error.message}`);
+    }
+  };
+
+  // Form Validation
+  const validateForm = () => {
+    if (!formData.title.trim()) {
+      showMessage('error', 'Title is required');
+      return false;
+    }
+    if (!formData.location.trim()) {
+      showMessage('error', 'Location is required');
+      return false;
+    }
+    if (!formData.size.trim()) {
+      showMessage('error', 'Size is required');
+      return false;
+    }
+
+    const priceValue = parseFloat(formData.price);
+    if (isNaN(priceValue) || priceValue < 0) {
+      showMessage('error', 'Please enter a valid price');
+      return false;
+    }
+
+    return true;
+  };
+
+  // Submit Handler
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    console.log('Form submitted');
+
+    if (!validateForm()) {
+      console.log('Form validation failed');
+      return;
+    }
+
+    try {
+      setUploading(true);
+      console.log('Starting save process...');
+      console.log('Current form data:', formData);
+
+      // Upload new image if selected
+      console.log('Uploading image...');
+      const imageUrl = await uploadImage();
+      console.log('Image URL after upload:', imageUrl);
+
+      const hoardingData = {
+        ...formData,
+        price: parseFloat(formData.price),
+        visibilityScore: parseInt(formData.visibilityScore) || 85,
+        rating: parseFloat(formData.rating) || 0,
+        views: parseInt(formData.views) || 0,
+        imageUrl,
+      };
+
+      console.log('Hoarding data before cleanup:', hoardingData);
+
+      // Remove undefined values
+      Object.keys(hoardingData).forEach(key => {
+        if (hoardingData[key] === undefined || hoardingData[key] === '') {
+          delete hoardingData[key];
+        }
+      });
+
+      console.log('Hoarding data after cleanup:', hoardingData);
+
+      if (editingHoarding) {
+        console.log('Updating existing hoarding:', editingHoarding.id);
+
+        // Delete old image if new one uploaded
+        if (imageFile && editingHoarding.imageUrl && editingHoarding.imageUrl !== imageUrl) {
+          console.log('Deleting old image...');
+          await deleteImageFromStorage(editingHoarding.imageUrl);
+        }
+
+        await updateDoc(doc(db, 'hoardings', editingHoarding.id), {
+          ...hoardingData,
+          updatedAt: serverTimestamp(),
+        });
+        console.log('Hoarding updated successfully');
+        showMessage('success', '✅ Hoarding updated successfully');
+      } else {
+        console.log('Creating new hoarding...');
+        const docRef = await addDoc(collection(db, 'hoardings'), {
+          ...hoardingData,
+          createdAt: serverTimestamp(),
+        });
+        console.log('Hoarding created with ID:', docRef.id);
+        showMessage('success', '✅ Hoarding added successfully');
+      }
+
+      resetForm();
+    } catch (error) {
+      console.error('Error saving hoarding:', error);
+      console.error('Error code:', error.code);
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+
+      if (error.code === 'permission-denied') {
+        showMessage('error', '❌ Permission denied: Please check Firestore rules');
+      } else {
+        showMessage('error', `❌ Failed to save hoarding: ${error.message}`);
+      }
+    } finally {
+      setUploading(false);
+      console.log('Save process completed');
+    }
+  };
+
+  const resetForm = () => {
+    setShowModal(false);
+    setEditingHoarding(null);
+    setFormData({
+      title: '',
+      location: '',
+      latitude: '',
+      longitude: '',
+      size: '',
+      price: '',
+      availability: true,
+      imageUrl: '',
+      visibilityScore: 85,
+      rating: 0,
+      tags: [],
+      bookingRate: 'medium',
+      views: 0,
+      trending: false,
+      description: '',
+      category: 'billboard'
+    });
+    setImageFile(null);
+    setImagePreview(null);
+  };
+
+  // Tag Toggle
+  const toggleTag = (tag) => {
+    setFormData(prev => ({
+      ...prev,
+      tags: prev.tags.includes(tag)
+        ? prev.tags.filter(t => t !== tag)
+        : [...prev.tags, tag]
+    }));
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white flex items-center">
+            <Building2 className="w-8 h-8 mr-3 text-primary-600" />
+            Manage Hoardings
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">
+            Real-time hoarding management with advanced features
+          </p>
+        </div>
+        <button
+          onClick={handleAddHoarding}
+          className="flex items-center space-x-2 bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg transition-colors"
+        >
+          <Plus className="w-5 h-5" />
+          <span>Add Hoarding</span>
+        </button>
+      </div>
+
+      {/* Success/Error Message */}
+      <AnimatePresence>
+        {message.text && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={`flex items-center gap-2 p-4 rounded-lg ${message.type === 'success'
+              ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
+              : 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
+              }`}
+          >
+            {message.type === 'success' ? (
+              <CheckCircle className="w-5 h-5" />
+            ) : (
+              <AlertCircle className="w-5 h-5" />
+            )}
+            <span>{message.text}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Search and Filters */}
+      <Card className="p-4 space-y-4">
+        {/* Search Bar */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search by title, location, or description..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+          />
+        </div>
+
+        {/* Filters */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="flex items-center space-x-2">
+            <input
+              type="number"
+              placeholder="Min Price"
+              value={filters.minPrice}
+              onChange={(e) => setFilters({ ...filters, minPrice: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-white"
+            />
+            <span className="text-gray-500">-</span>
+            <input
+              type="number"
+              placeholder="Max Price"
+              value={filters.maxPrice}
+              onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-white"
+            />
+          </div>
+
+          <select
+            value={filters.availability}
+            onChange={(e) => setFilters({ ...filters, availability: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-white"
+          >
+            <option value="all">All Status</option>
+            <option value="available">Available</option>
+            <option value="unavailable">Unavailable</option>
+          </select>
+
+          <select
+            value={filters.category}
+            onChange={(e) => setFilters({ ...filters, category: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-white"
+          >
+            <option value="all">All Categories</option>
+            {categories.map(cat => (
+              <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
+            ))}
+          </select>
+
+          <select
+            value={filters.minRating}
+            onChange={(e) => setFilters({ ...filters, minRating: Number(e.target.value) })}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-white"
+          >
+            <option value="0">All Ratings</option>
+            <option value="1">1+ Stars</option>
+            <option value="2">2+ Stars</option>
+            <option value="3">3+ Stars</option>
+            <option value="4">4+ Stars</option>
+          </select>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <label className="flex items-center space-x-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={filters.trending}
+              onChange={(e) => setFilters({ ...filters, trending: e.target.checked })}
+              className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+            />
+            <span className="text-sm text-gray-700 dark:text-gray-300">Show Trending Only</span>
+          </label>
+
+          <button
+            onClick={() => setFilters({ minPrice: '', maxPrice: '', availability: 'all', category: 'all', minRating: 0, trending: false })}
+            className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+          >
+            Clear Filters
+          </button>
+        </div>
+      </Card>
+
+      {/* Hoardings Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {paginatedHoardings.map((hoarding, index) => (
+          <motion.div
+            key={hoarding.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.05 }}
+          >
+            <Card className="overflow-hidden hover:shadow-lg transition-shadow">
+              {/* Image */}
+              <div className="h-48 bg-gray-200 dark:bg-gray-700 relative">
+                {hoarding.imageUrl ? (
+                  <img
+                    src={hoarding.imageUrl}
+                    alt={hoarding.title}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <ImageIcon className="w-16 h-16 text-gray-400" />
+                  </div>
+                )}
+
+                {/* Badges */}
+                <div className="absolute top-2 right-2 flex flex-col gap-2">
+                  <span className={`px-2 py-1 text-xs font-semibold rounded-full ${hoarding.availability
+                    ? 'bg-green-500 text-white'
+                    : 'bg-red-500 text-white'
+                    }`}>
+                    {hoarding.availability ? 'Available' : 'Unavailable'}
+                  </span>
+                  {hoarding.trending && (
+                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-orange-500 text-white flex items-center gap-1">
+                      <TrendingUp className="w-3 h-3" />
+                      Trending
+                    </span>
+                  )}
+                </div>
+
+                {/* Tags */}
+                {hoarding.tags && hoarding.tags.length > 0 && (
+                  <div className="absolute top-2 left-2 flex flex-wrap gap-1">
+                    {hoarding.tags.map(tag => (
+                      <span key={tag} className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-500 text-white">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Content */}
+              <div className="p-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                  {hoarding.title}
+                </h3>
+
+                {/* Description */}
+                {hoarding.description && (
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 line-clamp-2">
+                    {hoarding.description}
+                  </p>
+                )}
+
+                {/* Stats */}
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                    <Star className="w-4 h-4 mr-1 text-yellow-500" />
+                    {hoarding.rating || 0} Rating
+                  </div>
+                  <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                    <Eye className="w-4 h-4 mr-1 text-blue-500" />
+                    {hoarding.views || 0} Views
+                  </div>
+                  <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                    <Zap className="w-4 h-4 mr-1 text-purple-500" />
+                    {hoarding.visibilityScore || 85}% Visibility
+                  </div>
+                  <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                    <TrendingUp className={`w-4 h-4 mr-1 ${hoarding.bookingRate === 'high' ? 'text-green-500' :
+                      hoarding.bookingRate === 'medium' ? 'text-yellow-500' :
+                        'text-gray-500'
+                      }`} />
+                    {hoarding.bookingRate || 'medium'}
+                  </div>
+                </div>
+
+                {/* Details */}
+                <div className="space-y-2 mb-4">
+                  <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                    <MapPin className="w-4 h-4 mr-2" />
+                    {hoarding.location}
+                  </div>
+                  <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                    <Maximize2 className="w-4 h-4 mr-2" />
+                    {hoarding.size}
+                  </div>
+                  <div className="flex items-center text-sm font-semibold text-primary-600 dark:text-primary-400">
+                    <IndianRupee className="w-4 h-4 mr-1" />
+                    ₹{hoarding.price?.toLocaleString('en-IN')}/month
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex space-x-2 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <button
+                    onClick={() => handleEdit(hoarding)}
+                    className="flex-1 flex items-center justify-center space-x-1 px-3 py-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                    <span>Edit</span>
+                  </button>
+                  <button
+                    onClick={() => handleDelete(hoarding)}
+                    className="flex-1 flex items-center justify-center space-x-1 px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete</span>
+                  </button>
+                </div>
+              </div>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Empty State */}
+      {filteredHoardings.length === 0 && (
+        <div className="text-center py-12">
+          <Building2 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <p className="text-gray-500 dark:text-gray-400">No hoardings found</p>
+          <button
+            onClick={handleAddHoarding}
+            className="mt-4 inline-flex items-center space-x-2 bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg transition-colors"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Add First Hoarding</span>
+          </button>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex justify-center items-center space-x-2">
+          <button
+            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+            disabled={currentPage === 1}
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+          <span className="text-gray-700 dark:text-gray-300">
+            Page {currentPage} of {totalPages}
+          </span>
+          <button
+            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+            disabled={currentPage === totalPages}
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
+        </div>
+      )}
+
+      {/* Add/Edit Modal */}
+      <AnimatePresence>
+        {showModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-4xl"
+            >
+              <Card className="p-6 my-8 max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                    {editingHoarding ? 'Edit Hoarding' : 'Add New Hoarding'}
+                  </h2>
+                  <button
+                    onClick={resetForm}
+                    className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-6">
+                  {/* Basic Information */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Basic Information</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Title *
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.title}
+                          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Category *
+                        </label>
+                        <select
+                          value={formData.category}
+                          onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-white"
+                        >
+                          {categories.map(cat => (
+                            <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Description
+                        </label>
+                        <textarea
+                          value={formData.description}
+                          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                          rows="3"
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                          placeholder="Describe the hoarding location, features, etc."
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Location *
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.location}
+                          onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Size *
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.size}
+                          onChange={(e) => setFormData({ ...formData, size: e.target.value })}
+                          placeholder="e.g., 20x10 ft"
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Price (₹/month) *
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 dark:text-gray-400">₹</span>
+                          <input
+                            type="number"
+                            value={formData.price}
+                            onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                            placeholder="50000"
+                            className="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                            required
+                            min="0"
+                            step="1000"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Latitude
+                        </label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={formData.latitude}
+                          onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
+                          placeholder="e.g. 19.0760"
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Longitude
+                        </label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={formData.longitude}
+                          onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
+                          placeholder="e.g. 72.8777"
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Advanced Features */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Advanced Features</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Visibility Score (%)
+                        </label>
+                        <input
+                          type="number"
+                          value={formData.visibilityScore}
+                          onChange={(e) => setFormData({ ...formData, visibilityScore: e.target.value })}
+                          min="0"
+                          max="100"
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Rating (0-5)
+                        </label>
+                        <input
+                          type="number"
+                          value={formData.rating}
+                          onChange={(e) => setFormData({ ...formData, rating: e.target.value })}
+                          min="0"
+                          max="5"
+                          step="0.1"
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Booking Rate
+                        </label>
+                        <select
+                          value={formData.bookingRate}
+                          onChange={(e) => setFormData({ ...formData, bookingRate: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-white"
+                        >
+                          {bookingRates.map(rate => (
+                            <option key={rate} value={rate}>{rate.charAt(0).toUpperCase() + rate.slice(1)}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Views
+                        </label>
+                        <input
+                          type="number"
+                          value={formData.views}
+                          onChange={(e) => setFormData({ ...formData, views: e.target.value })}
+                          min="0"
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-white"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Tags
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {availableTags.map(tag => (
+                            <button
+                              key={tag}
+                              type="button"
+                              onClick={() => toggleTag(tag)}
+                              className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${formData.tags.includes(tag)
+                                ? 'bg-blue-500 text-white'
+                                : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                                }`}
+                            >
+                              {tag}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Image Upload */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Image
+                    </label>
+                    <div className="flex items-center space-x-4">
+                      <label className="flex-1 flex items-center justify-center px-4 py-2 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer hover:border-primary-500 transition-colors">
+                        <Upload className="w-5 h-5 mr-2 text-gray-400" />
+                        <span className="text-sm text-gray-600 dark:text-gray-400">
+                          {imageFile ? imageFile.name : 'Choose Image'}
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageChange}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                    {imagePreview && (
+                      <div className="mt-2">
+                        <img
+                          src={imagePreview}
+                          alt="Preview"
+                          className="w-full h-48 object-cover rounded-lg"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Availability and Trending */}
+                  <div className="flex items-center space-x-6">
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.availability}
+                        onChange={(e) => setFormData({ ...formData, availability: e.target.checked })}
+                        className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                      />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">Available for Booking</span>
+                    </label>
+
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.trending}
+                        onChange={(e) => setFormData({ ...formData, trending: e.target.checked })}
+                        className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                      />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">Mark as Trending</span>
+                    </label>
+                  </div>
+
+                  {/* Submit Buttons */}
+                  <div className="flex space-x-3 pt-4">
+                    <button
+                      type="button"
+                      onClick={resetForm}
+                      className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={uploading}
+                      className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {uploading ? (
+                        <>
+                          <Loader className="w-5 h-5 animate-spin" />
+                          <span>Saving...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-5 h-5" />
+                          <span>{editingHoarding ? 'Update' : 'Add'} Hoarding</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </Card>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+export default ManageHoardings;
