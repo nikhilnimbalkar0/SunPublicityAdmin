@@ -4,6 +4,7 @@ import {
   Users,
   Building2,
   Calendar,
+  MessageCircle,
   Settings,
   X,
   LogOut
@@ -19,6 +20,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/admin/users', icon: Users, label: 'Manage Users' },
     { path: '/admin/hoardings', icon: Building2, label: 'Manage Hoardings' },
     { path: '/admin/bookings', icon: Calendar, label: 'Manage Bookings' },
+    { path: '/admin/contacts', icon: MessageCircle, label: 'Contact Messages' },
     { path: '/admin/settings', icon: Settings, label: 'Settings' },
   ];
 

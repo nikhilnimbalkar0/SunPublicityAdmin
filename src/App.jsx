@@ -10,6 +10,7 @@ import ManageHoardings from './pages/ManageHoardings';
 import ManageBookings from './pages/ManageBookings';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
+import ContactMessages from './pages/ContactMessages';
 
 function App() {
   return (
@@ -32,6 +33,7 @@ function App() {
                 <Route path="users" element={<ManageUsers />} />
                 <Route path="hoardings" element={<ManageHoardings />} />
                 <Route path="bookings" element={<ManageBookings />} />
+                <Route path="contacts" element={<ContactMessages />} />
                 <Route path="settings" element={<Settings />} />
               </Route>
 

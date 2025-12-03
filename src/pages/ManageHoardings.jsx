@@ -71,7 +71,7 @@ const ManageHoardings = () => {
     views: 0,
     trending: false,
     description: '',
-    category: 'billboard'
+    category: 'Downtown Billboard'
   });
 
   // Filter State
@@ -89,7 +89,7 @@ const ManageHoardings = () => {
 
   // Available Tags
   const availableTags = ['New', 'Discount', 'Premium', 'Hot Deal', 'Limited'];
-  const categories = ['billboard', 'digital', 'transit', 'street', 'mall'];
+  const categories = ['Downtown Billboard', 'Highway Display', 'Shopping Mall Board', 'Event Promotion', 'City Center LED', 'Corporate Ad Space'];
   const bookingRates = ['low', 'medium', 'high'];
 
   // Real-time Data Fetching with onSnapshot
@@ -295,7 +295,7 @@ const ManageHoardings = () => {
       views: 0,
       trending: false,
       description: '',
-      category: 'billboard'
+      category: 'Downtown Billboard'
     });
     setImageFile(null);
     setImagePreview(null);
@@ -320,7 +320,7 @@ const ManageHoardings = () => {
       views: hoarding.views || 0,
       trending: hoarding.trending || false,
       description: hoarding.description || '',
-      category: hoarding.category || 'billboard'
+      category: hoarding.category || 'Downtown Billboard'
     });
     setImagePreview(hoarding.imageUrl || null);
     setImageFile(null);
@@ -471,7 +471,7 @@ const ManageHoardings = () => {
       views: 0,
       trending: false,
       description: '',
-      category: 'billboard'
+      category: 'Downtown Billboard'
     });
     setImageFile(null);
     setImagePreview(null);
