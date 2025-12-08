@@ -19,6 +19,7 @@ import { db } from '../config/firebase';
  */
 
 /**
+ * kj
  * Get a reference to a specific hoarding document
  * @param {string} categoryName - The category name (used as document ID)
  * @param {string} hoardingId - The hoarding ID
