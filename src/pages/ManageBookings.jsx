@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, doc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, deleteDoc, query, where, collectionGroup } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { Calendar, Search, CheckCircle, XCircle, Trash2, Filter, List, LayoutGrid } from 'lucide-react';
 import Card from '../components/Card';
@@ -68,12 +68,15 @@ const ManageBookings = () => {
                         }
                     }
 
-                    // Fetch hoarding details
+                    // Fetch hoarding details using collectionGroup
                     if (booking.hoardingId) {
                         try {
-                            const hoardingSnapshot = await getDocs(
-                                query(collection(db, 'hoardings'), where('__name__', '==', booking.hoardingId))
+                            const hoardingQuery = query(
+                                collectionGroup(db, 'hoardings'),
+                                where('__name__', '==', booking.hoardingId)
                             );
+                            const hoardingSnapshot = await getDocs(hoardingQuery);
+
                             if (!hoardingSnapshot.empty) {
                                 const hoardingData = hoardingSnapshot.docs[0].data();
                                 booking.hoardingTitle = hoardingData.title || 'Unknown';
@@ -179,8 +182,8 @@ const ManageBookings = () => {
                     <button
                         onClick={() => setViewMode('list')}
                         className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all ${viewMode === 'list'
-                                ? 'bg-white dark:bg-gray-600 text-primary-600 dark:text-white shadow-sm'
-                                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                            ? 'bg-white dark:bg-gray-600 text-primary-600 dark:text-white shadow-sm'
+                            : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                             }`}
                     >
                         <List className="w-4 h-4 mr-2" />
@@ -189,8 +192,8 @@ const ManageBookings = () => {
                     <button
                         onClick={() => setViewMode('calendar')}
                         className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all ${viewMode === 'calendar'
-                                ? 'bg-white dark:bg-gray-600 text-primary-600 dark:text-white shadow-sm'
-                                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                            ? 'bg-white dark:bg-gray-600 text-primary-600 dark:text-white shadow-sm'
+                            : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                             }`}
                     >
                         <LayoutGrid className="w-4 h-4 mr-2" />
@@ -293,10 +296,10 @@ const ManageBookings = () => {
                                                 </td>
                                                 <td className="py-3 px-4">
                                                     <span className={`px-2 py-1 text-xs font-semibold rounded-full ${booking.status === 'Approved'
-                                                            ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
-                                                            : booking.status === 'Pending'
-                                                                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400'
-                                                                : 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
+                                                        ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
+                                                        : booking.status === 'Pending'
+                                                            ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400'
+                                                            : 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
                                                         }`}>
                                                         {booking.status || 'Pending'}
                                                     </span>
@@ -306,8 +309,8 @@ const ManageBookings = () => {
                                                         value={booking.paymentStatus || 'Unpaid'}
                                                         onChange={(e) => handlePaymentStatusChange(booking.id, e.target.value)}
                                                         className={`px-2 py-1 text-xs font-semibold rounded-full border-0 ${booking.paymentStatus === 'Paid'
-                                                                ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
-                                                                : 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
+                                                            ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
+                                                            : 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
                                                             }`}
                                                     >
                                                         <option value="Paid">Paid</option>

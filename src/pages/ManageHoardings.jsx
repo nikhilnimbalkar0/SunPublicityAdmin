@@ -9,10 +9,17 @@ import {
   addDoc,
   serverTimestamp,
   query,
-  orderBy
+  orderBy,
+  collectionGroup,
+  setDoc
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { db, storage } from '../config/firebase';
+import { db } from '../config/firebase';
+import { uploadToCloudinary, extractPublicId } from '../config/cloudinary';
+import {
+  createHoarding,
+  updateHoarding,
+  deleteHoarding
+} from '../utils/hoardingHelpers';
 import {
   Building2,
   Plus,
@@ -35,7 +42,8 @@ import {
   CheckCircle,
   AlertCircle,
   Upload,
-  Filter
+  Filter,
+  FolderOpen
 } from 'lucide-react';
 import Card from '../components/Card';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -52,6 +60,11 @@ const ManageHoardings = () => {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [message, setMessage] = useState({ type: '', text: '' });
+
+  // Category Management State
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [categoryFormData, setCategoryFormData] = useState({ name: '' });
+  const [editingCategory, setEditingCategory] = useState(null);
 
   // Form State with Advanced Features
   const [formData, setFormData] = useState({
@@ -89,19 +102,77 @@ const ManageHoardings = () => {
 
   // Available Tags
   const availableTags = ['New', 'Discount', 'Premium', 'Hot Deal', 'Limited'];
-  const categories = ['Downtown Billboard', 'Highway Display', 'Shopping Mall Board', 'Event Promotion', 'City Center LED', 'Corporate Ad Space'];
+  const [categories, setCategories] = useState([]);
   const bookingRates = ['low', 'medium', 'high'];
 
-  // Real-time Data Fetching with onSnapshot
+  // Fetch Categories from Firestore
   useEffect(() => {
-    const q = query(collection(db, 'hoardings'), orderBy('createdAt', 'desc'));
+    const categoriesRef = collection(db, 'categories');
+
+    const unsubscribe = onSnapshot(categoriesRef,
+      (snapshot) => {
+        const categoriesData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          name: doc.id // Document ID is the category name
+        }));
+
+        if (categoriesData.length > 0) {
+          setCategories(categoriesData);
+        } else {
+          // Fallback to default categories if none exist
+          setCategories([
+            { id: 'Downtown Billboard', name: 'Downtown Billboard' },
+            { id: 'Highway Display', name: 'Highway Display' },
+            { id: 'Shopping Mall Board', name: 'Shopping Mall Board' },
+            { id: 'Event Promotion', name: 'Event Promotion' },
+            { id: 'City Center LED', name: 'City Center LED' },
+            { id: 'Corporate Ad Space', name: 'Corporate Ad Space' }
+          ]);
+        }
+      },
+      (error) => {
+        console.error('Error fetching categories:', error);
+        // Use default categories on error
+        setCategories([
+          { id: 'Downtown Billboard', name: 'Downtown Billboard' },
+          { id: 'Highway Display', name: 'Highway Display' },
+          { id: 'Shopping Mall Board', name: 'Shopping Mall Board' },
+          { id: 'Event Promotion', name: 'Event Promotion' },
+          { id: 'City Center LED', name: 'City Center LED' },
+          { id: 'Corporate Ad Space', name: 'Corporate Ad Space' }
+        ]);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  // Real-time Data Fetching with onSnapshot using collectionGroup
+  useEffect(() => {
+    // Fetch from category-based structure: categories/{categoryName}/hoardings/{hoardingId}
+    const q = query(collectionGroup(db, 'hoardings'));
 
     const unsubscribe = onSnapshot(q,
       (snapshot) => {
-        const hoardingsData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        const hoardingsData = snapshot.docs.map(doc => {
+          // Extract categoryName from document path
+          const pathParts = doc.ref.path.split('/');
+          const categoryName = pathParts[1];
+
+          return {
+            id: doc.id,
+            categoryName,
+            ...doc.data()
+          };
+        });
+
+        // Sort by createdAt in memory (descending)
+        hoardingsData.sort((a, b) => {
+          const aTime = a.createdAt?.toMillis?.() || 0;
+          const bTime = b.createdAt?.toMillis?.() || 0;
+          return bTime - aTime;
+        });
+
         setHoardings(hoardingsData);
         setFilteredHoardings(hoardingsData);
         setLoading(false);
@@ -203,7 +274,7 @@ const ManageHoardings = () => {
     }
   };
 
-  // Upload Image to Firebase Storage
+  // Upload Image to Cloudinary
   const uploadImage = async () => {
     if (!imageFile) {
       console.log('No new image file, returning existing URL:', formData.imageUrl);
@@ -212,66 +283,42 @@ const ManageHoardings = () => {
 
     try {
       setUploading(true);
-      console.log('Starting image upload...');
+      console.log('Starting image upload to Cloudinary...');
 
-      const timestamp = Date.now();
-      const sanitizedFileName = imageFile.name.replace(/[^a-zA-Z0-9.]/g, '_');
-      const uniqueFileName = `${timestamp}_${sanitizedFileName}`;
-
-      console.log('Uploading to path:', `hoardings/${uniqueFileName}`);
-      const storageRef = ref(storage, `hoardings/${uniqueFileName}`);
-
-      console.log('Uploading bytes...');
-      const uploadResult = await uploadBytes(storageRef, imageFile);
-      console.log('Upload successful:', uploadResult.metadata.fullPath);
-
-      console.log('Getting download URL...');
-      const downloadURL = await getDownloadURL(storageRef);
-      console.log('Download URL obtained:', downloadURL);
+      const result = await uploadToCloudinary(imageFile);
+      console.log('Upload successful:', result.url);
+      console.log('Public ID:', result.publicId);
 
       showMessage('success', '✅ Image uploaded successfully');
-      return downloadURL;
+      return result.url;
     } catch (error) {
       console.error('Error uploading image:', error);
-      console.error('Error code:', error.code);
       console.error('Error message:', error.message);
 
-      if (error.code === 'storage/unauthorized') {
-        showMessage('error', '❌ Permission denied: Please check Firebase Storage rules');
-        throw new Error('Permission denied');
-      } else if (error.code === 'storage/canceled') {
-        showMessage('error', '❌ Upload canceled');
-        throw new Error('Upload canceled');
-      } else {
-        showMessage('error', `❌ Upload failed: ${error.message}`);
-        throw new Error(`Failed to upload image: ${error.message}`);
-      }
+      showMessage('error', `❌ Upload failed: ${error.message}`);
+      throw new Error(`Failed to upload image: ${error.message}`);
     } finally {
       setUploading(false);
     }
   };
 
-  // Delete Image from Storage
+  // Delete Image from Cloudinary
   const deleteImageFromStorage = async (imageUrl) => {
-    if (!imageUrl || !imageUrl.includes('firebasestorage.googleapis.com')) {
-      console.log('No valid Firebase Storage URL to delete');
+    if (!imageUrl || !imageUrl.includes('cloudinary.com')) {
+      console.log('No valid Cloudinary URL to delete');
       return;
     }
 
     try {
-      console.log('Deleting image from storage:', imageUrl);
-      const decodedUrl = decodeURIComponent(imageUrl);
-      const pathMatch = decodedUrl.match(/\/o\/(.+?)\?/);
+      console.log('Image URL to delete:', imageUrl);
+      const publicId = extractPublicId(imageUrl);
+      console.log('Extracted public ID:', publicId);
 
-      if (pathMatch && pathMatch[1]) {
-        const filePath = pathMatch[1];
-        console.log('Extracted file path:', filePath);
-        const imageRef = ref(storage, filePath);
-        await deleteObject(imageRef);
-        console.log('Image deleted successfully');
-      }
+      // Note: Client-side deletion is not recommended for Cloudinary
+      // The image will remain in Cloudinary but won't be referenced in the database
+      console.log('Image reference removed from database. Image remains in Cloudinary.');
     } catch (error) {
-      console.log('Error deleting image:', error.message);
+      console.log('Error processing image deletion:', error.message);
       // Don't throw error, just log it
     }
   };
@@ -336,8 +383,9 @@ const ManageHoardings = () => {
         await deleteImageFromStorage(hoarding.imageUrl);
       }
 
-      // Delete document from Firestore
-      await deleteDoc(doc(db, 'hoardings', hoarding.id));
+      // Delete document from Firestore using category-based structure
+      const categoryName = hoarding.category || hoarding.categoryName;
+      await deleteHoarding(categoryName, hoarding.id);
       showMessage('success', 'Hoarding deleted successfully');
     } catch (error) {
       console.error('Error deleting hoarding:', error);
@@ -409,6 +457,14 @@ const ManageHoardings = () => {
 
       console.log('Hoarding data after cleanup:', hoardingData);
 
+      // Get category name from form data
+      const categoryName = formData.category;
+
+      if (!categoryName) {
+        showMessage('error', '❌ Category is required');
+        return;
+      }
+
       if (editingHoarding) {
         console.log('Updating existing hoarding:', editingHoarding.id);
 
@@ -418,7 +474,8 @@ const ManageHoardings = () => {
           await deleteImageFromStorage(editingHoarding.imageUrl);
         }
 
-        await updateDoc(doc(db, 'hoardings', editingHoarding.id), {
+        // Update using category-based structure
+        await updateHoarding(categoryName, editingHoarding.id, {
           ...hoardingData,
           updatedAt: serverTimestamp(),
         });
@@ -426,11 +483,13 @@ const ManageHoardings = () => {
         showMessage('success', '✅ Hoarding updated successfully');
       } else {
         console.log('Creating new hoarding...');
-        const docRef = await addDoc(collection(db, 'hoardings'), {
+
+        // Create using category-based structure
+        const newHoarding = await createHoarding(categoryName, {
           ...hoardingData,
           createdAt: serverTimestamp(),
         });
-        console.log('Hoarding created with ID:', docRef.id);
+        console.log('Hoarding created with ID:', newHoarding.id);
         showMessage('success', '✅ Hoarding added successfully');
       }
 
@@ -477,6 +536,81 @@ const ManageHoardings = () => {
     setImagePreview(null);
   };
 
+  // Category Management Functions
+  const handleAddCategory = () => {
+    setEditingCategory(null);
+    setCategoryFormData({ name: '' });
+    setShowCategoryModal(true);
+  };
+
+  const handleEditCategory = (category) => {
+    setEditingCategory(category);
+    setCategoryFormData({ name: category.name });
+    setShowCategoryModal(true);
+  };
+
+  const handleDeleteCategory = async (category) => {
+    if (!window.confirm(`Are you sure you want to delete "${category.name}"? This will also delete all hoardings in this category.`)) return;
+
+    try {
+      // Delete the category document
+      await deleteDoc(doc(db, 'categories', category.id));
+      showMessage('success', 'Category deleted successfully');
+    } catch (error) {
+      console.error('Error deleting category:', error);
+      showMessage('error', `Failed to delete category: ${error.message}`);
+    }
+  };
+
+  const handleSaveCategory = async (e) => {
+    e.preventDefault();
+
+    if (!categoryFormData.name.trim()) {
+      showMessage('error', 'Category name is required');
+      return;
+    }
+
+    try {
+      if (editingCategory) {
+        // Update existing category (rename)
+        const oldCategoryId = editingCategory.id;
+        const newCategoryName = categoryFormData.name.trim();
+
+        if (oldCategoryId !== newCategoryName) {
+          // Create new category with new name
+          await setDoc(doc(db, 'categories', newCategoryName), {
+            name: newCategoryName,
+            createdAt: serverTimestamp()
+          });
+
+          // Note: Hoardings will need to be migrated manually or we can keep the old category
+          showMessage('success', 'Category updated successfully');
+        }
+      } else {
+        // Create new category
+        const categoryName = categoryFormData.name.trim();
+        await setDoc(doc(db, 'categories', categoryName), {
+          name: categoryName,
+          createdAt: serverTimestamp()
+        });
+        showMessage('success', 'Category added successfully');
+      }
+
+      setShowCategoryModal(false);
+      setCategoryFormData({ name: '' });
+      setEditingCategory(null);
+    } catch (error) {
+      console.error('Error saving category:', error);
+      showMessage('error', `Failed to save category: ${error.message}`);
+    }
+  };
+
+  const resetCategoryForm = () => {
+    setShowCategoryModal(false);
+    setCategoryFormData({ name: '' });
+    setEditingCategory(null);
+  };
+
   // Tag Toggle
   const toggleTag = (tag) => {
     setFormData(prev => ({
@@ -514,6 +648,13 @@ const ManageHoardings = () => {
         >
           <Plus className="w-5 h-5" />
           <span>Add Hoarding</span>
+        </button>
+        <button
+          onClick={handleAddCategory}
+          className="flex items-center space-x-2 bg-secondary-600 hover:bg-secondary-700 text-white px-4 py-2 rounded-lg transition-colors"
+        >
+          <FolderOpen className="w-5 h-5" />
+          <span>Manage Categories</span>
         </button>
       </div>
 
@@ -590,7 +731,7 @@ const ManageHoardings = () => {
           >
             <option value="all">All Categories</option>
             {categories.map(cat => (
-              <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
+              <option key={cat.id} value={cat.name}>{cat.name}</option>
             ))}
           </select>
 
@@ -848,7 +989,7 @@ const ManageHoardings = () => {
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-white"
                         >
                           {categories.map(cat => (
-                            <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
+                            <option key={cat.id} value={cat.name}>{cat.name}</option>
                           ))}
                         </select>
                       </div>
@@ -1107,6 +1248,100 @@ const ManageHoardings = () => {
                     </button>
                   </div>
                 </form>
+              </Card>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Category Management Modal */}
+      <AnimatePresence>
+        {showCategoryModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-2xl"
+            >
+              <Card className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                    {editingCategory ? 'Edit Category' : 'Manage Categories'}
+                  </h2>
+                  <button
+                    onClick={resetCategoryForm}
+                    className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+
+                {/* Category Form */}
+                <form onSubmit={handleSaveCategory} className="mb-6">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={categoryFormData.name}
+                      onChange={(e) => setCategoryFormData({ name: e.target.value })}
+                      placeholder="Category name"
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-white"
+                    />
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                    >
+                      <Save className="w-4 h-4" />
+                      {editingCategory ? 'Update' : 'Add'}
+                    </button>
+                  </div>
+                </form>
+
+                {/* Categories List */}
+                <div className="space-y-2">
+                  <h3 className="font-semibold text-gray-900 dark:text-white mb-2">
+                    Existing Categories
+                  </h3>
+                  {categories.length === 0 ? (
+                    <p className="text-gray-500 dark:text-gray-400 text-center py-4">
+                      No categories yet. Add your first category above.
+                    </p>
+                  ) : (
+                    <div className="max-h-96 overflow-y-auto space-y-2">
+                      {categories.map(category => (
+                        <div
+                          key={category.id}
+                          className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
+                        >
+                          <span className="text-gray-900 dark:text-white font-medium">
+                            {category.name}
+                          </span>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleEditCategory(category)}
+                              className="p-2 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/20 rounded transition-colors"
+                              title="Edit category"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteCategory(category)}
+                              className="p-2 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/20 rounded transition-colors"
+                              title="Delete category"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </Card>
             </motion.div>
           </motion.div>

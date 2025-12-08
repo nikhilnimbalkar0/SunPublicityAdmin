@@ -32,7 +32,29 @@ const Login = () => {
       navigate('/admin/dashboard');
     } catch (error) {
       console.error('Auth error:', error);
-      setError(error.message || 'Authentication failed. Please check your credentials.');
+
+      // Provide user-friendly error messages
+      let errorMessage = 'Authentication failed. Please try again.';
+
+      if (error.code === 'auth/network-request-failed') {
+        errorMessage = '⚠️ Network error: Please check your internet connection and try again.';
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = 'Invalid email address format.';
+      } else if (error.code === 'auth/user-not-found') {
+        errorMessage = 'No account found with this email address.';
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = 'Incorrect password. Please try again.';
+      } else if (error.code === 'auth/email-already-in-use') {
+        errorMessage = 'An account with this email already exists.';
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = 'Password should be at least 6 characters long.';
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = 'Too many failed attempts. Please try again later.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

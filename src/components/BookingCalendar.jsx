@@ -4,7 +4,7 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import Modal from 'react-modal';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, collectionGroup, query } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
@@ -72,9 +72,21 @@ const BookingCalendar = () => {
             setLoading(false);
         }, (error) => console.error("Error fetching bookings:", error));
 
-        // Subscribe to Hoardings
-        const unsubscribeHoardings = onSnapshot(collection(db, 'hoardings'), (snapshot) => {
-            setHoardings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        // Subscribe to Hoardings using collectionGroup
+        const hoardingsQuery = query(collectionGroup(db, 'hoardings'));
+        const unsubscribeHoardings = onSnapshot(hoardingsQuery, (snapshot) => {
+            const hoardingsData = snapshot.docs.map(doc => {
+                // Extract categoryName from document path
+                const pathParts = doc.ref.path.split('/');
+                const categoryName = pathParts[1];
+
+                return {
+                    id: doc.id,
+                    categoryName,
+                    ...doc.data()
+                };
+            });
+            setHoardings(hoardingsData);
         }, (error) => console.error("Error fetching hoardings:", error));
 
         // Subscribe to Users
@@ -437,8 +449,8 @@ const BookingCalendar = () => {
                                         </div>
                                     </div>
                                     <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${(booking.status === 'Confirmed' || booking.status === 'Approved') ? 'bg-green-100 text-green-700' :
-                                            booking.status === 'Pending' ? 'bg-yellow-100 text-yellow-700' :
-                                                'bg-red-100 text-red-700'
+                                        booking.status === 'Pending' ? 'bg-yellow-100 text-yellow-700' :
+                                            'bg-red-100 text-red-700'
                                         }`}>
                                         {booking.status}
                                     </span>

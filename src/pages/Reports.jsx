@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, collectionGroup } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { FileText, Download, TrendingUp, BarChart3 } from 'lucide-react';
 import Card from '../components/Card';
@@ -26,13 +26,23 @@ const Reports = () => {
     try {
       setLoading(true);
 
-      // Fetch all data
+      // Fetch all data using collectionGroup for hoardings
       const [hoardingsSnap, bookingsSnap] = await Promise.all([
-        getDocs(collection(db, 'hoardings')),
+        getDocs(collectionGroup(db, 'hoardings')),
         getDocs(collection(db, 'bookings'))
       ]);
 
-      const hoardings = hoardingsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const hoardings = hoardingsSnap.docs.map(doc => {
+        // Extract categoryName from document path
+        const pathParts = doc.ref.path.split('/');
+        const categoryName = pathParts[1];
+
+        return {
+          id: doc.id,
+          categoryName,
+          ...doc.data()
+        };
+      });
       const bookings = bookingsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       // Monthly Revenue Calculation

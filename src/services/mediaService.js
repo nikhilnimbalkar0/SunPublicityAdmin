@@ -1,21 +1,20 @@
-import { 
-  collection, 
-  getDocs, 
+import {
+  collection,
+  getDocs,
   getDoc,
-  doc, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
+  doc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
   onSnapshot,
   query,
   orderBy,
-  serverTimestamp 
+  serverTimestamp
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { db, storage } from '../config/firebase';
+import { db } from '../config/firebase';
+import { uploadToCloudinary, extractPublicId } from '../config/cloudinary';
 
 const MEDIA_COLLECTION = 'media';
-const STORAGE_PATH = 'media';
 
 // Get all media items
 export const getAllMedia = async () => {
@@ -37,7 +36,7 @@ export const getMediaById = async (id) => {
   try {
     const docRef = doc(db, MEDIA_COLLECTION, id);
     const docSnap = await getDoc(docRef);
-    
+
     if (docSnap.exists()) {
       return { id: docSnap.id, ...docSnap.data() };
     } else {
@@ -49,36 +48,28 @@ export const getMediaById = async (id) => {
   }
 };
 
-// Upload image to Firebase Storage
+// Upload image to Cloudinary
 export const uploadMediaImage = async (file) => {
   try {
-    const timestamp = Date.now();
-    const fileName = `${timestamp}_${file.name}`;
-    const storageRef = ref(storage, `${STORAGE_PATH}/${fileName}`);
-    
-    await uploadBytes(storageRef, file);
-    const downloadURL = await getDownloadURL(storageRef);
-    
-    return { url: downloadURL, path: `${STORAGE_PATH}/${fileName}` };
+    const result = await uploadToCloudinary(file);
+    return { url: result.url, path: result.publicId };
   } catch (error) {
     console.error('Error uploading image:', error);
     throw error;
   }
 };
 
-// Delete image from Firebase Storage
+// Delete image from Cloudinary
 export const deleteMediaImage = async (imagePath) => {
   try {
-    if (imagePath && imagePath.includes(STORAGE_PATH)) {
-      const storageRef = ref(storage, imagePath);
-      await deleteObject(storageRef);
+    if (imagePath) {
+      console.log('Image reference removed. Public ID:', imagePath);
+      // Note: Client-side deletion is not recommended for Cloudinary
+      // The image will remain in Cloudinary but won't be referenced in the database
     }
   } catch (error) {
-    console.error('Error deleting image:', error);
-    // Don't throw error if file doesn't exist
-    if (error.code !== 'storage/object-not-found') {
-      throw error;
-    }
+    console.error('Error processing image deletion:', error);
+    // Don't throw error
   }
 };
 
@@ -90,7 +81,7 @@ export const createMedia = async (mediaData) => {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     });
-    
+
     return docRef.id;
   } catch (error) {
     console.error('Error creating media:', error);
@@ -119,7 +110,7 @@ export const deleteMedia = async (id, imagePath) => {
     if (imagePath) {
       await deleteMediaImage(imagePath);
     }
-    
+
     // Delete document from Firestore
     await deleteDoc(doc(db, MEDIA_COLLECTION, id));
   } catch (error) {
@@ -131,7 +122,7 @@ export const deleteMedia = async (id, imagePath) => {
 // Real-time listener for media collection
 export const subscribeToMedia = (callback) => {
   const q = query(collection(db, MEDIA_COLLECTION), orderBy('createdAt', 'desc'));
-  
+
   return onSnapshot(q, (querySnapshot) => {
     const media = querySnapshot.docs.map(doc => ({
       id: doc.id,
@@ -162,9 +153,9 @@ export const searchMedia = async (searchTerm) => {
   try {
     const allMedia = await getAllMedia();
     if (!searchTerm) return allMedia;
-    
+
     const term = searchTerm.toLowerCase();
-    return allMedia.filter(item => 
+    return allMedia.filter(item =>
       item.title?.toLowerCase().includes(term) ||
       item.description?.toLowerCase().includes(term) ||
       item.category?.toLowerCase().includes(term)
