@@ -2,47 +2,56 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { NotificationProvider } from './contexts/NotificationContext';
+import { ToastProvider } from './contexts/ToastContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import Home from './pages/Home';
 import ManageUsers from './pages/ManageUsers';
 import ManageHoardings from './pages/ManageHoardings';
 import ManageBookings from './pages/ManageBookings';
+import Customers from './pages/Customers';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import ContactMessages from './pages/ContactMessages';
+import HordingLocation from './pages/HordingLocation';
+import AdminHero from './pages/AdminHero';
 
 function App() {
   return (
     <AuthProvider>
       <NotificationProvider>
-        <ThemeProvider>
-          <Router>
-            <Routes>
-              {/* Public Routes */}
-              <Route path="/login" element={<Login />} />
+        <ToastProvider>
+          <ThemeProvider>
+            <Router>
+              <Routes>
+                {/* Public Routes */}
+                <Route path="/login" element={<Login />} />
 
-              {/* Admin Routes - Protected */}
-              <Route path="/admin" element={
-                <ProtectedRoute>
-                  <Layout />
-                </ProtectedRoute>
-              }>
-                <Route index element={<Navigate to="/admin/home" replace />} />
-                <Route path="home" element={<Home />} />
-                <Route path="users" element={<ManageUsers />} />
-                <Route path="hoardings" element={<ManageHoardings />} />
-                <Route path="bookings" element={<ManageBookings />} />
-                <Route path="contacts" element={<ContactMessages />} />
-                <Route path="settings" element={<Settings />} />
-              </Route>
+                {/* Admin Routes - Protected */}
+                <Route path="/admin" element={
+                  <ProtectedRoute>
+                    <Layout />
+                  </ProtectedRoute>
+                }>
+                  <Route index element={<Navigate to="/admin/home" replace />} />
+                  <Route path="home" element={<Home />} />
+                  <Route path="users" element={<ManageUsers />} />
+                  <Route path="hoardings" element={<ManageHoardings />} />
+                  <Route path="bookings" element={<ManageBookings />} />
+                  <Route path="customers" element={<Customers />} />
+                  <Route path="locations" element={<HordingLocation />} />
+                  <Route path="contacts" element={<ContactMessages />} />
+                  <Route path="hero" element={<AdminHero />} />
+                  <Route path="settings" element={<Settings />} />
+                </Route>
 
-              {/* Default Redirect */}
-              <Route path="/" element={<Navigate to="/admin/home" replace />} />
-              <Route path="*" element={<Navigate to="/admin/home" replace />} />
-            </Routes>
-          </Router>
-        </ThemeProvider>
+                {/* Default Redirect */}
+                <Route path="/" element={<Navigate to="/admin/home" replace />} />
+                <Route path="*" element={<Navigate to="/admin/home" replace />} />
+              </Routes>
+            </Router>
+          </ThemeProvider>
+        </ToastProvider>
       </NotificationProvider>
     </AuthProvider>
   );

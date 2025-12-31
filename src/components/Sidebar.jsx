@@ -7,7 +7,9 @@ import {
   MessageCircle,
   Settings,
   X,
-  LogOut
+  LogOut,
+  MapPin,
+  Monitor
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -18,8 +20,11 @@ const Sidebar = ({ isOpen, onClose }) => {
   const navItems = [
     { path: '/admin/home', icon: Home, label: 'Home' },
     { path: '/admin/users', icon: Users, label: 'Manage Users' },
+    { path: '/admin/customers', icon: Users, label: 'Customers' },
     { path: '/admin/hoardings', icon: Building2, label: 'Manage Hoardings' },
     { path: '/admin/bookings', icon: Calendar, label: 'Manage Bookings' },
+    { path: '/admin/locations', icon: MapPin, label: 'Hording Locations' },
+    { path: '/admin/hero', icon: Monitor, label: 'Hero Section' },
     { path: '/admin/contacts', icon: MessageCircle, label: 'Contact Messages' },
     { path: '/admin/settings', icon: Settings, label: 'Settings' },
   ];

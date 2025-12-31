@@ -63,7 +63,12 @@ const ManageHoardings = () => {
 
   // Category Management State
   const [showCategoryModal, setShowCategoryModal] = useState(false);
-  const [categoryFormData, setCategoryFormData] = useState({ name: '' });
+  const [categoryFormData, setCategoryFormData] = useState({
+    name: '',
+    icon: 'billboard',
+    active: true,
+    order: 0
+  });
   const [editingCategory, setEditingCategory] = useState(null);
 
   // Form State with Advanced Features
@@ -84,7 +89,7 @@ const ManageHoardings = () => {
     views: 0,
     trending: false,
     description: '',
-    category: 'Downtown Billboard'
+    category: ''
   });
 
   // Filter State
@@ -105,47 +110,52 @@ const ManageHoardings = () => {
   const [categories, setCategories] = useState([]);
   const bookingRates = ['low', 'medium', 'high'];
 
+  // Icon options for categories
+  const iconOptions = [
+    { key: 'billboard', label: 'Billboard' },
+    { key: 'monitor', label: 'Digital Screen' },
+    { key: 'bus', label: 'Bus/Transit' },
+    { key: 'building', label: 'Building' },
+    { key: 'map-pin', label: 'Location' },
+    { key: 'zap', label: 'Premium' },
+    { key: 'tag', label: 'Tag' },
+    { key: 'trending-up', label: 'Trending' }
+  ];
+
   // Fetch Categories from Firestore
   useEffect(() => {
     const categoriesRef = collection(db, 'categories');
 
     const unsubscribe = onSnapshot(categoriesRef,
       (snapshot) => {
-        const categoriesData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          name: doc.id // Document ID is the category name
-        }));
+        const categoriesData = snapshot.docs
+          .map(doc => ({
+            id: doc.id,
+            name: doc.id // Document ID is the category name
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name)); // Sort alphabetically
 
-        if (categoriesData.length > 0) {
-          setCategories(categoriesData);
-        } else {
-          // Fallback to default categories if none exist
-          setCategories([
-            { id: 'Downtown Billboard', name: 'Downtown Billboard' },
-            { id: 'Highway Display', name: 'Highway Display' },
-            { id: 'Shopping Mall Board', name: 'Shopping Mall Board' },
-            { id: 'Event Promotion', name: 'Event Promotion' },
-            { id: 'City Center LED', name: 'City Center LED' },
-            { id: 'Corporate Ad Space', name: 'Corporate Ad Space' }
-          ]);
-        }
+        setCategories(categoriesData);
       },
       (error) => {
         console.error('Error fetching categories:', error);
-        // Use default categories on error
-        setCategories([
-          { id: 'Downtown Billboard', name: 'Downtown Billboard' },
-          { id: 'Highway Display', name: 'Highway Display' },
-          { id: 'Shopping Mall Board', name: 'Shopping Mall Board' },
-          { id: 'Event Promotion', name: 'Event Promotion' },
-          { id: 'City Center LED', name: 'City Center LED' },
-          { id: 'Corporate Ad Space', name: 'Corporate Ad Space' }
-        ]);
+        showMessage('error', 'Failed to fetch categories from Firestore');
+        setCategories([]);
       }
     );
 
     return () => unsubscribe();
   }, []);
+
+  // Set default category when categories are loaded
+  useEffect(() => {
+    if (categories.length > 0 && !formData.category) {
+      setFormData(prev => ({
+        ...prev,
+        category: categories[0].name
+      }));
+    }
+  }, [categories]);
 
   // Real-time Data Fetching with onSnapshot using collectionGroup
   useEffect(() => {
@@ -162,7 +172,8 @@ const ManageHoardings = () => {
           return {
             id: doc.id,
             categoryName,
-            ...doc.data()
+            ...doc.data(),
+            availability: doc.data().availability === true
           };
         });
 
@@ -342,7 +353,7 @@ const ManageHoardings = () => {
       views: 0,
       trending: false,
       description: '',
-      category: 'Downtown Billboard'
+      category: categories.length > 0 ? categories[0].name : ''
     });
     setImageFile(null);
     setImagePreview(null);
@@ -421,6 +432,7 @@ const ManageHoardings = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     console.log('Form submitted');
+    console.log('Selected category:', formData.category);
 
     if (!validateForm()) {
       console.log('Form validation failed');
@@ -462,8 +474,11 @@ const ManageHoardings = () => {
 
       if (!categoryName) {
         showMessage('error', '❌ Category is required');
+        setUploading(false);
         return;
       }
+
+      console.log('Using category:', categoryName);
 
       if (editingHoarding) {
         console.log('Updating existing hoarding:', editingHoarding.id);
@@ -482,7 +497,7 @@ const ManageHoardings = () => {
         console.log('Hoarding updated successfully');
         showMessage('success', '✅ Hoarding updated successfully');
       } else {
-        console.log('Creating new hoarding...');
+        console.log('Creating new hoarding in category:', categoryName);
 
         // Create using category-based structure
         const newHoarding = await createHoarding(categoryName, {
@@ -501,7 +516,9 @@ const ManageHoardings = () => {
       console.error('Error stack:', error.stack);
 
       if (error.code === 'permission-denied') {
-        showMessage('error', '❌ Permission denied: Please check Firestore rules');
+        showMessage('error', '❌ Permission denied: Please check Firestore rules and ensure they are deployed');
+      } else if (error.code === 'not-found') {
+        showMessage('error', '❌ Category not found: Please ensure the category exists');
       } else {
         showMessage('error', `❌ Failed to save hoarding: ${error.message}`);
       }
@@ -530,7 +547,7 @@ const ManageHoardings = () => {
       views: 0,
       trending: false,
       description: '',
-      category: 'Downtown Billboard'
+      category: categories.length > 0 ? categories[0].name : ''
     });
     setImageFile(null);
     setImagePreview(null);
@@ -539,13 +556,23 @@ const ManageHoardings = () => {
   // Category Management Functions
   const handleAddCategory = () => {
     setEditingCategory(null);
-    setCategoryFormData({ name: '' });
+    setCategoryFormData({
+      name: '',
+      icon: 'billboard',
+      active: true,
+      order: categories.length + 1
+    });
     setShowCategoryModal(true);
   };
 
   const handleEditCategory = (category) => {
     setEditingCategory(category);
-    setCategoryFormData({ name: category.name });
+    setCategoryFormData({
+      name: category.name,
+      icon: category.icon || 'billboard',
+      active: category.active !== undefined ? category.active : true,
+      order: category.order || 0
+    });
     setShowCategoryModal(true);
   };
 
@@ -571,33 +598,42 @@ const ManageHoardings = () => {
     }
 
     try {
+      const categoryName = categoryFormData.name.trim();
+      const categoryData = {
+        name: categoryName,
+        icon: categoryFormData.icon || 'billboard',
+        active: categoryFormData.active !== undefined ? categoryFormData.active : true,
+        order: parseInt(categoryFormData.order) || 0,
+        createdAt: serverTimestamp()
+      };
+
       if (editingCategory) {
-        // Update existing category (rename)
+        // Update existing category
         const oldCategoryId = editingCategory.id;
-        const newCategoryName = categoryFormData.name.trim();
 
-        if (oldCategoryId !== newCategoryName) {
-          // Create new category with new name
-          await setDoc(doc(db, 'categories', newCategoryName), {
-            name: newCategoryName,
-            createdAt: serverTimestamp()
-          });
-
-          // Note: Hoardings will need to be migrated manually or we can keep the old category
+        if (oldCategoryId !== categoryName) {
+          // If name changed, create new category document
+          await setDoc(doc(db, 'categories', categoryName), categoryData);
+          // Note: Old category and its hoardings remain unchanged
+          showMessage('success', 'Category created with new name');
+        } else {
+          // Update existing category document
+          await setDoc(doc(db, 'categories', categoryName), categoryData);
           showMessage('success', 'Category updated successfully');
         }
       } else {
         // Create new category
-        const categoryName = categoryFormData.name.trim();
-        await setDoc(doc(db, 'categories', categoryName), {
-          name: categoryName,
-          createdAt: serverTimestamp()
-        });
+        await setDoc(doc(db, 'categories', categoryName), categoryData);
         showMessage('success', 'Category added successfully');
       }
 
       setShowCategoryModal(false);
-      setCategoryFormData({ name: '' });
+      setCategoryFormData({
+        name: '',
+        icon: 'billboard',
+        active: true,
+        order: 0
+      });
       setEditingCategory(null);
     } catch (error) {
       console.error('Error saving category:', error);
@@ -607,7 +643,12 @@ const ManageHoardings = () => {
 
   const resetCategoryForm = () => {
     setShowCategoryModal(false);
-    setCategoryFormData({ name: '' });
+    setCategoryFormData({
+      name: '',
+      icon: 'billboard',
+      active: true,
+      order: 0
+    });
     setEditingCategory(null);
   };
 
@@ -1284,20 +1325,73 @@ const ManageHoardings = () => {
 
                 {/* Category Form */}
                 <form onSubmit={handleSaveCategory} className="mb-6">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={categoryFormData.name}
-                      onChange={(e) => setCategoryFormData({ name: e.target.value })}
-                      placeholder="Category name"
-                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-white"
-                    />
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Category Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={categoryFormData.name}
+                        onChange={(e) => setCategoryFormData({ ...categoryFormData, name: e.target.value })}
+                        placeholder="e.g., Auto Promotion"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-white"
+                        required
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Icon *
+                        </label>
+                        <select
+                          value={categoryFormData.icon}
+                          onChange={(e) => setCategoryFormData({ ...categoryFormData, icon: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-white"
+                        >
+                          {iconOptions.map(option => (
+                            <option key={option.key} value={option.key}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Display Order
+                        </label>
+                        <input
+                          type="number"
+                          value={categoryFormData.order}
+                          onChange={(e) => setCategoryFormData({ ...categoryFormData, order: e.target.value })}
+                          placeholder="0"
+                          min="0"
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="categoryActive"
+                        checked={categoryFormData.active}
+                        onChange={(e) => setCategoryFormData({ ...categoryFormData, active: e.target.checked })}
+                        className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                      />
+                      <label htmlFor="categoryActive" className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                        Active (show on website)
+                      </label>
+                    </div>
+
                     <button
                       type="submit"
-                      className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                      className="w-full px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
                     >
                       <Save className="w-4 h-4" />
-                      {editingCategory ? 'Update' : 'Add'}
+                      {editingCategory ? 'Update Category' : 'Add Category'}
                     </button>
                   </div>
                 </form>
