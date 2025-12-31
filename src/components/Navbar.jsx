@@ -32,6 +32,7 @@ const Navbar = ({ onMenuClick }) => {
           >
             <Menu className="w-6 h-6" />
           </button>
+          <img src="/sun.jpeg" alt="Logo" className="w-10 h-10 rounded-full object-cover" />
           <h2 className="text-xl font-semibold text-gray-800 dark:text-white hidden sm:block">
             Admin Dashboard
           </h2>

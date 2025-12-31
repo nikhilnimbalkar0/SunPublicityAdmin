@@ -100,8 +100,16 @@ export const getHoardingsByCategory = async (categoryName) => {
  */
 export const createHoarding = async (categoryName, hoardingData) => {
     try {
+        console.log('Creating hoarding in category:', categoryName);
+
+        // Ensure the category document exists first
+        await ensureCategoryExists(categoryName);
+        console.log('Category document ensured:', categoryName);
+
         const hoardingsRef = getHoardingsCollectionRef(categoryName);
         const docRef = await addDoc(hoardingsRef, hoardingData);
+
+        console.log('Hoarding created successfully with ID:', docRef.id);
 
         return {
             id: docRef.id,
@@ -110,6 +118,8 @@ export const createHoarding = async (categoryName, hoardingData) => {
         };
     } catch (error) {
         console.error('Error creating hoarding:', error);
+        console.error('Error code:', error.code);
+        console.error('Error message:', error.message);
         throw error;
     }
 };

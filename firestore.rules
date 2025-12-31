@@ -6,29 +6,83 @@ service cloud.firestore {
     function isAuthenticated() {
       return request.auth != null;
     }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
 
     // Users collection
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      // Allow users to read their own document (needed for isAdmin() to work)
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      // Allow admins to read all users
+      allow read: if isAdmin();
+      // Allow authenticated users to list/count users (for dashboard stats)
+      allow list: if isAuthenticated();
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && request.auth.uid == userId;
-      allow delete: if false;
+      allow update: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow delete: if isAdmin();
     }
     
-    // Hoardings collection - Allow authenticated users
+    // Legacy hoardings collection (keeping for backward compatibility)
     match /hoardings/{hoardingId} {
       allow read: if true; // Public read
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
-      allow delete: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+    
+    // Categories collection - NEW STRUCTURE
+    match /categories/{categoryName} {
+      allow read: if true; // Public read for website
+      allow write: if isAuthenticated(); // Authenticated users can manage
+      
+      // Hoardings subcollection within categories
+      match /hoardings/{hoardingId} {
+        allow read: if true; // Public read for website
+        allow write: if isAuthenticated(); // Authenticated users can manage
+      }
     }
     
     // Bookings collection
     match /bookings/{bookingId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
+      allow create: if true; // Allow public to create bookings
       allow update: if isAuthenticated();
       allow delete: if isAuthenticated();
+    }
+    
+    // Contact messages collection (snake_case - legacy)
+    match /contact_messages/{messageId} {
+      allow read: if isAuthenticated();
+      allow create: if true; // Allow public to create messages
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
+    
+    // Contact messages collection (camelCase - current)
+    match /contactMessages/{messageId} {
+      allow read: if isAuthenticated();
+      allow create: if true; // Allow public to create messages
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
+    
+    // Hero section collection
+    match /hero_section/{heroId} {
+      allow read: if true; // Public read for website
+      allow write: if isAuthenticated();
+    }
+    
+    // Hoarding location collection (typo - legacy)
+    match /hordingloaction/{locationId} {
+      allow read: if true; // Public read for website
+      allow write: if isAuthenticated();
+    }
+    
+    // Hoarding location collection (correct spelling)
+    match /hordinglocation/{locationId} {
+      allow read: if true; // Public read for website
+      allow write: if isAuthenticated();
     }
     
     // Media collection

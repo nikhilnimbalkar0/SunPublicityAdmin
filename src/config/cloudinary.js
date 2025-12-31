@@ -12,10 +12,20 @@ export const uploadToCloudinary = async (file) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-    formData.append('folder', 'hoardings'); // Optional: organize in folders
+    formData.append('folder', 'hoardings');
+
+    // Add resource_type auto to support videos if needed, though Cloudinary defaults might hande it.
+    // However, for explicit video uploads, we often need 'resource_type' param in URL or body.
+    // The standard endpoint is /image/upload, but for videos it should be /video/upload or /auto/upload.
+
+    // Determine endpoint based on file type
+    let apiUrl = CLOUDINARY_API_URL;
+    if (file.type.startsWith('video/')) {
+        apiUrl = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/video/upload`;
+    }
 
     try {
-        const response = await fetch(CLOUDINARY_API_URL, {
+        const response = await fetch(apiUrl, {
             method: 'POST',
             body: formData,
         });

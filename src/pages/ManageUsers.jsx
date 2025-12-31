@@ -46,10 +46,13 @@ const ManageUsers = () => {
     try {
       setLoading(true);
       const querySnapshot = await getDocs(collection(db, 'users'));
-      const usersData = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const usersData = querySnapshot.docs
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+        // Filter to only show admin panel users (exclude regular customers)
+        .filter(user => user.role === 'admin');
       setUsers(usersData);
       setFilteredUsers(usersData);
     } catch (error) {
