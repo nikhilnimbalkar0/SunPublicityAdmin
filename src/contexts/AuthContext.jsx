@@ -44,9 +44,9 @@ export const AuthProvider = ({ children }) => {
 
     if (userDoc.exists()) {
       const userData = userDoc.data();
-      if (userData.role !== 'admin') {
+      if (userData.role !== 'admin' && userData.role !== 'user') {
         await signOut(auth);
-        throw new Error('Access denied. Admin privileges required.');
+        throw new Error('Access denied. Admin or Staff privileges required.');
       }
       setUserRole(userData.role);
     } else {
@@ -97,7 +97,6 @@ export const AuthProvider = ({ children }) => {
     currentUser,
     userRole,
     login,
-    signup,
     logout,
     updateUserProfile,
     updateUserPassword,

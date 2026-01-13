@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, deleteDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { db } from '../config/firebase';
-import { Users, Search, Edit2, Trash2, Plus, X, UserCheck, UserX } from 'lucide-react';
+import { Users, Search, Edit2, Trash2, Plus, X, UserCheck, UserX, Eye, EyeOff } from 'lucide-react';
 import Card from '../components/Card';
 import LoadingSpinner from '../components/LoadingSpinner';
 
@@ -12,9 +14,11 @@ const ManageUsers = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
+    password: '',
     role: 'user',
     active: true,
   });
@@ -51,8 +55,8 @@ const ManageUsers = () => {
           id: doc.id,
           ...doc.data()
         }))
-        // Filter to only show admin panel users (exclude regular customers)
-        .filter(user => user.role === 'admin');
+        // Filter to show both admins and regular users in the management panel
+        .filter(user => user.role === 'admin' || user.role === 'user');
       setUsers(usersData);
       setFilteredUsers(usersData);
     } catch (error) {
@@ -68,6 +72,7 @@ const ManageUsers = () => {
     setFormData({
       name: user.name || '',
       email: user.email || '',
+      password: '', // Password not editable for security
       role: user.role || 'user',
       active: user.active !== false,
     });
@@ -75,11 +80,11 @@ const ManageUsers = () => {
   };
 
   const handleDelete = async (userId) => {
-    if (!window.confirm('Are you sure you want to delete this user?')) return;
+    if (!window.confirm('Are you sure you want to delete this user? This will only remove their Firestore profile, not their Auth account.')) return;
 
     try {
       await deleteDoc(doc(db, 'users', userId));
-      alert('User deleted successfully');
+      alert('User profile deleted successfully');
       fetchUsers();
     } catch (error) {
       console.error('Error deleting user:', error);
@@ -91,28 +96,65 @@ const ManageUsers = () => {
     e.preventDefault();
 
     try {
+      setLoading(true);
       if (editingUser) {
-        // Update existing user
+        // Update existing user profile in Firestore
         await updateDoc(doc(db, 'users', editingUser.id), {
-          ...formData,
+          name: formData.name,
+          role: formData.role,
+          active: formData.active,
           updatedAt: serverTimestamp(),
         });
         alert('User updated successfully');
       } else {
-        // Add new user (Note: In production, you'd create auth account first)
-        await addDoc(collection(db, 'users'), {
-          ...formData,
-          createdAt: serverTimestamp(),
-        });
-        alert('User added successfully');
+        // Create new user using a secondary Firebase app (to avoid logging out current admin)
+        const secondaryConfig = {
+          apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDvJh-WS8IYMHZ0zzFg6k2SPOjkDE2zws8",
+          authDomain: "fir-1aad8.firebaseapp.com",
+          projectId: "fir-1aad8",
+          storageBucket: "fir-1aad8.appspot.com",
+          messagingSenderId: "613059477350",
+          appId: "1:613059477350:web:fb972046a1ed7c5dd892a7"
+        };
+
+        const secondaryApp = initializeApp(secondaryConfig, 'Secondary');
+        const secondaryAuth = getAuth(secondaryApp);
+
+        try {
+          // 1. Create User in Firebase Auth
+          const userCredential = await createUserWithEmailAndPassword(
+            secondaryAuth,
+            formData.email,
+            formData.password
+          );
+
+          // 2. Create User Profile in Firestore
+          await setDoc(doc(db, 'users', userCredential.user.uid), {
+            name: formData.name,
+            email: formData.email,
+            role: formData.role,
+            active: formData.active,
+            createdAt: serverTimestamp(),
+          });
+
+          alert('User created successfully');
+        } finally {
+          // Cleanup the secondary app
+          await deleteApp(secondaryApp);
+        }
       }
       setShowModal(false);
       setEditingUser(null);
-      setFormData({ name: '', email: '', role: 'user', active: true });
+      setFormData({ name: '', email: '', password: '', role: 'user', active: true });
       fetchUsers();
     } catch (error) {
       console.error('Error saving user:', error);
-      alert('Failed to save user');
+      let message = 'Failed to save user';
+      if (error.code === 'auth/email-already-in-use') message = 'Email is already in use.';
+      if (error.code === 'auth/weak-password') message = 'Password is too weak.';
+      alert(message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -129,7 +171,7 @@ const ManageUsers = () => {
     }
   };
 
-  if (loading) {
+  if (loading && users.length === 0) {
     return (
       <div className="flex items-center justify-center h-full">
         <LoadingSpinner size="lg" />
@@ -153,7 +195,7 @@ const ManageUsers = () => {
         <button
           onClick={() => {
             setEditingUser(null);
-            setFormData({ name: '', email: '', role: 'user', active: true });
+            setFormData({ name: '', email: '', password: '', role: 'user', active: true });
             setShowModal(true);
           }}
           className="flex items-center space-x-2 bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg transition-colors"
@@ -319,8 +361,34 @@ const ManageUsers = () => {
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                     required
+                    disabled={!!editingUser}
                   />
                 </div>
+
+                {!editingUser && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                        required
+                        minLength={6}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -359,9 +427,10 @@ const ManageUsers = () => {
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
+                    disabled={loading}
+                    className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors disabled:opacity-50"
                   >
-                    {editingUser ? 'Update' : 'Add'} User
+                    {loading ? (editingUser ? 'Updating...' : 'Adding...') : (editingUser ? 'Update' : 'Add')} User
                   </button>
                 </div>
               </form>

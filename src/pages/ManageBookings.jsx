@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import { collection, getDocs, doc, updateDoc, query, where, documentId, collectionGroup } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import {
@@ -18,7 +18,10 @@ import {
     Phone,
     MapPin,
     DollarSign,
-    CreditCard
+    CreditCard,
+    ChevronDown,
+    ChevronUp,
+    Users
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -30,6 +33,7 @@ const ManageBookings = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [updating, setUpdating] = useState(null);
     const [currentPage, setCurrentPage] = useState(1);
+    const [expandedRows, setExpandedRows] = useState(new Set());
 
     // Enhanced Filters
     const [statusFilter, setStatusFilter] = useState('all');
@@ -174,6 +178,15 @@ const ManageBookings = () => {
         setSelectedBooking(null);
     };
 
+    const toggleRow = (userId) => {
+        setExpandedRows(prev => {
+            const next = new Set(prev);
+            if (next.has(userId)) next.delete(userId);
+            else next.add(userId);
+            return next;
+        });
+    };
+
     // Enhanced filtering logic
     const filteredBookings = bookings.filter(b => {
         const matchesStatus = statusFilter === 'all' || b.status === statusFilter;
@@ -195,11 +208,43 @@ const ManageBookings = () => {
         return matchesStatus && matchesSearch && matchesDate;
     });
 
-    // Pagination
-    const totalPages = Math.ceil(filteredBookings.length / itemsPerPage);
+    // Group Bookings by Customer
+    const groupedBookings = useMemo(() => {
+        const groups = {};
+        filteredBookings.forEach(booking => {
+            const userId = booking.userId || 'unknown';
+            if (!groups[userId]) {
+                groups[userId] = {
+                    userId,
+                    userName: booking.userName || 'Unknown User',
+                    userEmail: booking.userEmail || 'N/A',
+                    userPhone: booking.userPhone || 'N/A',
+                    bookings: [],
+                    totalSpend: 0,
+                    lastBookingDate: null,
+                    statusCounts: { Approved: 0, Pending: 0, Rejected: 0 }
+                };
+            }
+            groups[userId].bookings.push(booking);
+            groups[userId].totalSpend += (Number(booking.totalPrice) || 0);
+
+            if (booking.status) {
+                groups[userId].statusCounts[booking.status] = (groups[userId].statusCounts[booking.status] || 0) + 1;
+            }
+
+            if (!groups[userId].lastBookingDate || booking.createdAt > groups[userId].lastBookingDate) {
+                groups[userId].lastBookingDate = booking.createdAt;
+            }
+        });
+
+        return Object.values(groups).sort((a, b) => (b.lastBookingDate || 0) - (a.lastBookingDate || 0));
+    }, [filteredBookings]);
+
+    // Pagination based on grouped rows
+    const totalPages = Math.ceil(groupedBookings.length / itemsPerPage);
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
-    const currentBookings = filteredBookings.slice(startIndex, endIndex);
+    const currentGroups = groupedBookings.slice(startIndex, endIndex);
 
     useEffect(() => {
         setCurrentPage(1);
@@ -362,100 +407,172 @@ const ManageBookings = () => {
             {/* Bookings Table */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
                 <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
+                    <table className="w-full text-sm text-left border-collapse">
                         <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400 font-medium uppercase text-xs">
                             <tr>
-                                <th className="px-6 py-4">Customer</th>
-                                <th className="px-6 py-4">Hoarding</th>
-                                <th className="px-6 py-4">Booking Period</th>
-                                <th className="px-6 py-4 text-center">Amount</th>
-                                <th className="px-6 py-4 text-center">Status</th>
-                                <th className="px-6 py-4 text-center">Payment</th>
-                                <th className="px-6 py-4 text-right">Actions</th>
+                                <th className="px-6 py-4 w-10"></th>
+                                <th className="px-6 py-4">Customer Details</th>
+                                <th className="px-6 py-4 text-center">Total Bookings</th>
+                                <th className="px-6 py-4 text-center">Total Spends</th>
+                                <th className="px-6 py-4 text-center">Status Overview</th>
+                                <th className="px-6 py-4 text-right pr-10">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                            {currentBookings.length > 0 ? currentBookings.map((booking) => (
-                                <tr key={booking.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
-                                                {booking.userName?.charAt(0).toUpperCase() || 'U'}
-                                            </div>
-                                            <div>
-                                                <div className="font-medium text-gray-900 dark:text-gray-100">
-                                                    {booking.userName || 'Unknown'}
-                                                </div>
-                                                <div className="text-xs text-gray-500">
-                                                    {booking.userEmail}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className="font-medium text-gray-900 dark:text-gray-100 max-w-[200px] truncate" title={booking.hoardingTitle}>
-                                            {booking.hoardingTitle || 'Unknown Hoarding'}
-                                        </div>
-                                        <div className="text-xs text-gray-500 truncate max-w-[180px] flex items-center gap-1">
-                                            <MapPin className="w-3 h-3" />
-                                            {booking.hoardingAddress || 'No Address'}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className="text-gray-900 dark:text-gray-100 text-xs">
-                                            {booking.startDate ? format(booking.startDate, 'MMM d, yyyy') : 'N/A'}
-                                        </div>
-                                        <div className="text-xs text-gray-500">
-                                            to {booking.endDate ? format(booking.endDate, 'MMM d, yyyy') : 'N/A'}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 text-center">
-                                        <div className="inline-flex items-center gap-1.5 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 px-3 py-1.5 rounded-lg font-semibold">
-                                            ₹{booking.totalPrice?.toLocaleString()}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 text-center">
-                                        <StatusBadge status={booking.status} />
-                                    </td>
-                                    <td className="px-6 py-4 text-center">
-                                        <PaymentStatusBadge paymentStatus={booking.paymentStatus} />
-                                    </td>
-                                    <td className="px-6 py-4 text-right">
-                                        <div className="flex items-center justify-end gap-2">
-                                            <button
-                                                onClick={() => openModal(booking)}
-                                                className="p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                                                title="View Details"
-                                            >
-                                                <Eye className="w-4 h-4" />
-                                            </button>
-
-                                            {booking.status === 'Pending' && (
-                                                <>
-                                                    <button
-                                                        onClick={() => updateStatus(booking.id, 'Approved')}
-                                                        disabled={updating === booking.id}
-                                                        className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors disabled:opacity-50"
-                                                        title="Approve"
-                                                    >
-                                                        {updating === booking.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                                                    </button>
-                                                    <button
-                                                        onClick={() => updateStatus(booking.id, 'Rejected')}
-                                                        disabled={updating === booking.id}
-                                                        className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50"
-                                                        title="Reject"
-                                                    >
-                                                        <XCircle className="w-4 h-4" />
-                                                    </button>
-                                                </>
+                            {currentGroups.length > 0 ? currentGroups.map((group) => (
+                                <Fragment key={group.userId}>
+                                    <tr
+                                        onClick={() => toggleRow(group.userId)}
+                                        className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer ${expandedRows.has(group.userId) ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}
+                                    >
+                                        <td className="px-6 py-4 text-center">
+                                            {expandedRows.has(group.userId) ? (
+                                                <ChevronUp className="w-5 h-5 text-blue-600" />
+                                            ) : (
+                                                <ChevronDown className="w-5 h-5 text-gray-400" />
                                             )}
-                                        </div>
-                                    </td>
-                                </tr>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold shadow-sm">
+                                                    {group.userName?.charAt(0).toUpperCase() || 'U'}
+                                                </div>
+                                                <div>
+                                                    <div className="font-semibold text-gray-900 dark:text-gray-100">
+                                                        {group.userName}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500 flex items-center gap-2">
+                                                        <Mail className="w-3 h-3" />
+                                                        {group.userEmail}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 text-center">
+                                            <div className="inline-flex items-center gap-2 px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-lg text-gray-700 dark:text-gray-300 font-medium">
+                                                <FileText className="w-3.5 h-3.5" />
+                                                {group.bookings.length}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 text-center">
+                                            <div className="text-sm font-bold text-gray-900 dark:text-white">
+                                                ₹{group.totalSpend?.toLocaleString()}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 text-center">
+                                            <div className="flex items-center justify-center gap-2">
+                                                {group.statusCounts.Pending > 0 && (
+                                                    <div className="w-2.5 h-2.5 rounded-full bg-yellow-400" title={`${group.statusCounts.Pending} Pending`} />
+                                                )}
+                                                {group.statusCounts.Approved > 0 && (
+                                                    <div className="w-2.5 h-2.5 rounded-full bg-green-500" title={`${group.statusCounts.Approved} Approved`} />
+                                                )}
+                                                {group.statusCounts.Rejected > 0 && (
+                                                    <div className="w-2.5 h-2.5 rounded-full bg-red-400" title={`${group.statusCounts.Rejected} Rejected`} />
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 text-right pr-10">
+                                            <button
+                                                className="text-blue-600 dark:text-blue-400 font-medium text-xs hover:underline"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    toggleRow(group.userId);
+                                                }}
+                                            >
+                                                {expandedRows.has(group.userId) ? 'Hide Bookings' : 'View Bookings'}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {expandedRows.has(group.userId) && (
+                                        <tr>
+                                            <td colSpan="6" className="px-8 py-0 bg-gray-50/50 dark:bg-gray-800/50">
+                                                <div className="py-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">Booking History for {group.userName}</h4>
+                                                    </div>
+                                                    <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-sm">
+                                                        <table className="w-full text-xs text-left">
+                                                            <thead className="bg-gray-50 dark:bg-gray-800 text-gray-500 border-b border-gray-100 dark:border-gray-700">
+                                                                <tr>
+                                                                    <th className="px-4 py-3">Hoarding</th>
+                                                                    <th className="px-4 py-3">Period</th>
+                                                                    <th className="px-4 py-3 text-center">Amount</th>
+                                                                    <th className="px-4 py-3 text-center">Status</th>
+                                                                    <th className="px-4 py-3 text-center">Payment</th>
+                                                                    <th className="px-4 py-3 text-right">Actions</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                                                                {group.bookings.map((booking) => (
+                                                                    <tr key={booking.id} className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                                                                        <td className="px-4 py-3">
+                                                                            <div className="font-medium text-gray-900 dark:text-gray-100 truncate max-w-[200px]">
+                                                                                {booking.hoardingTitle || 'Unknown'}
+                                                                            </div>
+                                                                            <div className="text-[10px] text-gray-500 truncate max-w-[180px]">
+                                                                                {booking.hoardingAddress || 'N/A'}
+                                                                            </div>
+                                                                        </td>
+                                                                        <td className="px-4 py-3 text-gray-500">
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                <Calendar className="w-3 h-3" />
+                                                                                {booking.startDate ? format(booking.startDate, 'MMM d, yyyy') : 'N/A'} - {booking.endDate ? format(booking.endDate, 'MMM d, yyyy') : 'N/A'}
+                                                                            </div>
+                                                                        </td>
+                                                                        <td className="px-4 py-3 text-center font-semibold text-gray-900 dark:text-white">
+                                                                            ₹{booking.totalPrice?.toLocaleString()}
+                                                                        </td>
+                                                                        <td className="px-4 py-3 text-center">
+                                                                            <StatusBadge status={booking.status} />
+                                                                        </td>
+                                                                        <td className="px-4 py-3 text-center">
+                                                                            <PaymentStatusBadge paymentStatus={booking.paymentStatus} />
+                                                                        </td>
+                                                                        <td className="px-4 py-3 text-right">
+                                                                            <div className="flex items-center justify-end gap-1.5">
+                                                                                <button
+                                                                                    onClick={() => openModal(booking)}
+                                                                                    className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded transition-colors"
+                                                                                    title="Quick View"
+                                                                                >
+                                                                                    <Eye className="w-4 h-4" />
+                                                                                </button>
+                                                                                {booking.status === 'Pending' && (
+                                                                                    <div className="flex gap-1">
+                                                                                        <button
+                                                                                            onClick={() => updateStatus(booking.id, 'Approved')}
+                                                                                            disabled={updating === booking.id}
+                                                                                            className="p-1 text-green-500 hover:bg-green-50 rounded transition-colors"
+                                                                                            title="Approve"
+                                                                                        >
+                                                                                            <CheckCircle className="w-4 h-4" />
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={() => updateStatus(booking.id, 'Rejected')}
+                                                                                            disabled={updating === booking.id}
+                                                                                            className="p-1 text-red-500 hover:bg-red-50 rounded transition-colors"
+                                                                                            title="Reject"
+                                                                                        >
+                                                                                            <XCircle className="w-4 h-4" />
+                                                                                        </button>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )}
+                                </Fragment>
                             )) : (
                                 <tr>
-                                    <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                                    <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
                                         <FileText className="w-12 h-12 mx-auto text-gray-300 mb-3" />
                                         <p>No bookings found matching your filters.</p>
                                     </td>
@@ -469,8 +586,8 @@ const ManageBookings = () => {
                 {totalPages > 1 && (
                     <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 dark:border-gray-700">
                         <div className="text-sm text-gray-500 dark:text-gray-400">
-                            Showing {startIndex + 1} to {Math.min(endIndex, filteredBookings.length)} of{' '}
-                            {filteredBookings.length} bookings
+                            Showing {startIndex + 1} to {Math.min(endIndex, groupedBookings.length)} of{' '}
+                            {groupedBookings.length} customers
                         </div>
                         <div className="flex items-center gap-2">
                             <button

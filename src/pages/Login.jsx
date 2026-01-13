@@ -4,19 +4,17 @@ import { Building2, Mail, Lock, AlertCircle, User } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const Login = () => {
-  const [isLogin, setIsLogin] = useState(true);
-  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login, signup } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!email || !password || (!isLogin && !name)) {
+    if (!email || !password) {
       setError('Please fill in all fields');
       return;
     }
@@ -24,11 +22,7 @@ const Login = () => {
     try {
       setError('');
       setLoading(true);
-      if (isLogin) {
-        await login(email, password);
-      } else {
-        await signup(email, password, name);
-      }
+      await login(email, password);
       navigate('/admin/dashboard');
     } catch (error) {
       console.error('Auth error:', error);
@@ -42,8 +36,8 @@ const Login = () => {
         errorMessage = 'Invalid email address format.';
       } else if (error.code === 'auth/user-not-found') {
         errorMessage = 'No account found with this email address.';
-      } else if (error.code === 'auth/wrong-password') {
-        errorMessage = 'Incorrect password. Please try again.';
+      } else if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+        errorMessage = 'Incorrect email or password. Please try again.';
       } else if (error.code === 'auth/email-already-in-use') {
         errorMessage = 'An account with this email already exists.';
       } else if (error.code === 'auth/weak-password') {
@@ -72,7 +66,7 @@ const Login = () => {
             Hoarding Management
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            {isLogin ? 'Admin Dashboard Login' : 'Create Admin Account'}
+            Admin Dashboard Login
           </p>
         </div>
 
@@ -83,26 +77,6 @@ const Login = () => {
               <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start space-x-3">
                 <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
                 <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-              </div>
-            )}
-
-            {!isLogin && (
-              <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Full Name
-                </label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    id="name"
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                    placeholder="John Doe"
-                    disabled={loading}
-                  />
-                </div>
               </div>
             )}
 
@@ -120,6 +94,7 @@ const Login = () => {
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                   placeholder="admin@example.com"
                   disabled={loading}
+                  required
                 />
               </div>
             </div>
@@ -138,6 +113,7 @@ const Login = () => {
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                   placeholder="••••••••"
                   disabled={loading}
+                  required
                 />
               </div>
             </div>
@@ -147,20 +123,13 @@ const Login = () => {
               disabled={loading}
               className="w-full bg-primary-600 hover:bg-primary-700 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? (isLogin ? 'Signing in...' : 'Creating Account...') : (isLogin ? 'Sign In' : 'Create Account')}
+              {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
 
-          <div className="mt-6 text-center space-y-2">
-            <button
-              type="button"
-              onClick={() => setIsLogin(!isLogin)}
-              className="text-primary-600 hover:text-primary-700 font-medium text-sm"
-            >
-              {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
-            </button>
+          <div className="mt-6 text-center">
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              {isLogin ? 'Admin access only.' : 'New accounts will be created with Admin privileges.'}
+              Admin access only. Unauthorized access is prohibited.
             </p>
           </div>
         </div>
