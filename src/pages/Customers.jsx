@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, where, collectionGroup } from 'firebase/firestore';
+import { collection, getDocs, query, where, collectionGroup, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import {
     Users,
     Search,
@@ -12,16 +13,17 @@ import {
     ChevronRight,
     Phone,
     Mail,
-    DollarSign,
     ShoppingBag,
     X,
     FileText,
-    ExternalLink
+    ExternalLink,
+    Trash2
 } from 'lucide-react';
 import { format } from 'date-fns';
 
 const Customers = () => {
     const navigate = useNavigate();
+    const { userRole } = useAuth();
     const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -33,6 +35,8 @@ const Customers = () => {
     const [loadingBookings, setLoadingBookings] = useState(false);
 
     const itemsPerPage = 10;
+
+    const canDelete = userRole === 'admin' || userRole === 'user';
 
     useEffect(() => {
         fetchCustomers();
@@ -82,7 +86,7 @@ const Customers = () => {
                         role: userData.role || 'customer'
                     };
                 })
-                .filter(user => user.role !== 'admin');
+                .filter(user => user.role !== 'admin' && user.role !== 'user'); // Filter out dashboard users
 
             customersData.sort((a, b) => b.totalSpend - a.totalSpend);
 
@@ -91,6 +95,29 @@ const Customers = () => {
             console.error('Error fetching customers:', err);
             setError('Failed to load customers. Please try again.');
         } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleDeleteCustomer = async (customer) => {
+        if (!canDelete) {
+            alert('You do not have permission to delete customers.');
+            return;
+        }
+
+        if (!window.confirm(`Are you sure you want to delete the profile for ${customer.name}? This will only remove their profile record from Firestore.`)) {
+            return;
+        }
+
+        try {
+            setLoading(true);
+            await deleteDoc(doc(db, 'users', customer.id));
+            alert('Customer profile deleted successfully.');
+            if (isModalOpen) closeModal();
+            fetchCustomers();
+        } catch (err) {
+            console.error('Error deleting customer:', err);
+            alert('Failed to delete customer profile.');
             setLoading(false);
         }
     };
@@ -183,7 +210,7 @@ const Customers = () => {
         );
     };
 
-    if (loading) {
+    if (loading && customers.length === 0) {
         return (
             <div className="flex items-center justify-center p-12">
                 <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -290,18 +317,28 @@ const Customers = () => {
                                         </td>
                                         <td className="px-6 py-4 text-center">
                                             <div className="inline-flex items-center gap-1.5 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 px-3 py-1.5 rounded-lg font-semibold">
-                                                <DollarSign className="w-3.5 h-3.5" />
                                                 ₹{customer.totalSpend.toLocaleString()}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <button
-                                                onClick={() => openCustomerModal(customer)}
-                                                className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                                            >
-                                                <Eye className="w-4 h-4" />
-                                                View Profile
-                                            </button>
+                                            <div className="flex items-center justify-end gap-2">
+                                                <button
+                                                    onClick={() => openCustomerModal(customer)}
+                                                    className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                                >
+                                                    <Eye className="w-4 h-4" />
+                                                    <span className="hidden sm:inline">View</span>
+                                                </button>
+                                                {canDelete && (
+                                                    <button
+                                                        onClick={() => handleDeleteCustomer(customer)}
+                                                        className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                                        title="Delete profile"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))
@@ -338,8 +375,8 @@ const Customers = () => {
                                         key={page}
                                         onClick={() => setCurrentPage(page)}
                                         className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${currentPage === page
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
                                             }`}
                                     >
                                         {page}
@@ -442,7 +479,7 @@ const Customers = () => {
                                     <div className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-900/10 p-5 rounded-xl border-2 border-green-200 dark:border-green-900/40">
                                         <div className="flex items-center gap-4">
                                             <div className="p-3 bg-green-500 rounded-xl shadow-lg">
-                                                <DollarSign className="w-7 h-7 text-white" />
+                                                <ShoppingBag className="w-7 h-7 text-white" />
                                             </div>
                                             <div>
                                                 <p className="text-xs text-gray-600 dark:text-gray-400 font-medium mb-1">Lifetime Spend</p>
@@ -536,7 +573,17 @@ const Customers = () => {
                         </div>
 
                         {/* Modal Footer */}
-                        <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700">
+                        <div className="flex items-center justify-between gap-3 px-6 py-4 bg-gray-50 dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700">
+                            {canDelete ? (
+                                <button
+                                    onClick={() => handleDeleteCustomer(selectedCustomer)}
+                                    className="px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-900/40 shadow-sm"
+                                >
+                                    Delete Profile
+                                </button>
+                            ) : (
+                                <div />
+                            )}
                             <button
                                 onClick={closeModal}
                                 className="px-5 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors shadow-sm dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600"

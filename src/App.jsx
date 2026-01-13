@@ -13,8 +13,8 @@ import Customers from './pages/Customers';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import ContactMessages from './pages/ContactMessages';
-import HordingLocation from './pages/HordingLocation';
 import AdminHero from './pages/AdminHero';
+import FirestoreDataViewer from './pages/FirestoreDataViewer';
 
 function App() {
   return (
@@ -39,9 +39,9 @@ function App() {
                   <Route path="hoardings" element={<ManageHoardings />} />
                   <Route path="bookings" element={<ManageBookings />} />
                   <Route path="customers" element={<Customers />} />
-                  <Route path="locations" element={<HordingLocation />} />
                   <Route path="contacts" element={<ContactMessages />} />
                   <Route path="hero" element={<AdminHero />} />
+                  <Route path="data-viewer" element={<FirestoreDataViewer />} />
                   <Route path="settings" element={<Settings />} />
                 </Route>
 

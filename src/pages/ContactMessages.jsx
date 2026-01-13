@@ -398,8 +398,8 @@ const ContactMessages = () => {
               <Card
                 key={msg.id}
                 className={`p-4 flex flex-col space-y-3 relative cursor-pointer transition-all hover:shadow-lg ${!msg.read
-                    ? 'ring-2 ring-blue-500 dark:ring-blue-400 bg-gradient-to-br from-blue-50 to-white dark:from-blue-900/10 dark:to-gray-800'
-                    : 'hover:ring-2 hover:ring-gray-300 dark:hover:ring-gray-600'
+                  ? 'ring-2 ring-blue-500 dark:ring-blue-400 bg-gradient-to-br from-blue-50 to-white dark:from-blue-900/10 dark:to-gray-800'
+                  : 'hover:ring-2 hover:ring-gray-300 dark:hover:ring-gray-600'
                   }`}
                 onClick={() => openMessageModal(msg)}
               >
@@ -472,9 +472,17 @@ const ContactMessages = () => {
                   <p className="line-clamp-3">
                     {msg.message || 'No message provided.'}
                   </p>
-                  <button className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 text-xs mt-2 font-medium">
-                    Read more →
-                  </button>
+                  {(msg.message && msg.message.length > 120) && (
+                    <button
+                      className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 text-xs mt-2 font-medium"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openMessageModal(msg);
+                      }}
+                    >
+                      Read more →
+                    </button>
+                  )}
                 </div>
               </Card>
             ))}

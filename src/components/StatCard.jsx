@@ -18,13 +18,18 @@ const StatCard = ({ title, value, icon: Icon, trend, trendValue, color = 'blue' 
           <p className="text-3xl font-bold text-gray-900 dark:text-white">
             {value}
           </p>
-          {trend && (
-            <p className={`text-sm mt-2 ${trend === 'up' ? 'text-green-600' : 'text-red-600'}`}>
-              {trend === 'up' ? '↑' : '↓'} {trendValue}
-            </p>
+          {trendValue !== undefined && (
+            <div className="flex items-center gap-2 mt-2">
+              <span className={`flex items-center text-sm font-medium ${trend === 'up' ? 'text-green-600' : 'text-red-600'}`}>
+                {trend === 'up' ? '↑' : '↓'} {trendValue}%
+              </span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                vs last month
+              </span>
+            </div>
           )}
         </div>
-        <div className={`p-4 rounded-lg ${colorClasses[color]}`}>
+        <div className={`p-4 rounded-xl shadow-inner ${colorClasses[color]}`}>
           <Icon className="w-8 h-8" />
         </div>
       </div>
