@@ -14,7 +14,7 @@ import Settings from './pages/Settings';
 import Login from './pages/Login';
 import ContactMessages from './pages/ContactMessages';
 import AdminHero from './pages/AdminHero';
-import FirestoreDataViewer from './pages/FirestoreDataViewer';
+import ManageWorkers from './pages/ManageWorkers';
 
 function App() {
   return (
@@ -41,7 +41,7 @@ function App() {
                   <Route path="customers" element={<Customers />} />
                   <Route path="contacts" element={<ContactMessages />} />
                   <Route path="hero" element={<AdminHero />} />
-                  <Route path="data-viewer" element={<FirestoreDataViewer />} />
+                  <Route path="workers" element={<ManageWorkers />} />
                   <Route path="settings" element={<Settings />} />
                 </Route>
 

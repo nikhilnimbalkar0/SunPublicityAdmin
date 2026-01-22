@@ -45,6 +45,53 @@ export const fetchAllData = async () => {
 };
 
 // ============================================
+// WORKERS COLLECTION
+// ============================================
+
+/**
+ * Fetch all workers from Firestore
+ * @returns {Promise<Array>} Array of worker objects
+ */
+export const fetchWorkers = async () => {
+    try {
+        const workersRef = collection(db, 'workers');
+        const q = query(workersRef, orderBy('createdAt', 'desc'));
+        const snapshot = await getDocs(q);
+
+        const workers = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+
+        console.log(`✅ Fetched ${workers.length} workers`);
+        return workers;
+    } catch (error) {
+        console.error('Error fetching workers:', error);
+        throw error;
+    }
+};
+
+/**
+ * Subscribe to real-time workers updates
+ * @param {Function} callback - Function to call with updated data
+ * @returns {Function} Unsubscribe function
+ */
+export const subscribeToWorkers = (callback) => {
+    const workersRef = collection(db, 'workers');
+    const q = query(workersRef, orderBy('createdAt', 'desc'));
+
+    return onSnapshot(q, (snapshot) => {
+        const workers = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+        callback(workers);
+    }, (error) => {
+        console.error('Error in workers subscription:', error);
+    });
+};
+
+// ============================================
 // USERS COLLECTION
 // ============================================
 
@@ -499,5 +546,9 @@ export default {
     fetchUnreadContactMessages,
 
     // Statistics
-    fetchDashboardStats
+    fetchDashboardStats,
+
+    // Workers
+    fetchWorkers,
+    subscribeToWorkers
 };

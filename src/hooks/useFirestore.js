@@ -15,7 +15,9 @@ import {
     fetchBookingsByUser,
     fetchActiveCategories,
     fetchHoardingsByCategory,
-    fetchUnreadContactMessages
+    fetchUnreadContactMessages,
+    fetchWorkers,
+    subscribeToWorkers
 } from '../services/firestoreService';
 
 /**
@@ -161,6 +163,46 @@ export const useUsers = (realtime = false) => {
     }, [realtime]);
 
     return { users, loading, error, refetch: fetchData };
+};
+
+/**
+ * Custom hook to fetch workers
+ * @param {boolean} realtime - Whether to use real-time updates
+ * @returns {Object} { workers, loading, error, refetch }
+ */
+export const useWorkers = (realtime = false) => {
+    const [workers, setWorkers] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    const fetchData = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const result = await fetchWorkers();
+            setWorkers(result);
+        } catch (err) {
+            setError(err.message);
+            console.error('Error fetching workers:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!realtime) {
+            fetchData();
+        } else {
+            const unsubscribe = subscribeToWorkers((data) => {
+                setWorkers(data);
+                setLoading(false);
+            });
+
+            return () => unsubscribe();
+        }
+    }, [realtime]);
+
+    return { workers, loading, error, refetch: fetchData };
 };
 
 /**
