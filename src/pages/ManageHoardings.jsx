@@ -61,6 +61,10 @@ const ManageHoardings = () => {
   const [imagePreview, setImagePreview] = useState(null);
   const [message, setMessage] = useState({ type: '', text: '' });
 
+  // Multiple images state
+  const [imageFiles, setImageFiles] = useState([]);
+  const [imagePreviews, setImagePreviews] = useState([]);
+
   // Category Management State
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [categoryFormData, setCategoryFormData] = useState({
@@ -258,56 +262,78 @@ const ManageHoardings = () => {
     setTimeout(() => setMessage({ type: '', text: '' }), 5000);
   };
 
-  // Image Handling
+  // Image Handling - Multiple Images
   const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      console.log('File selected:', file.name, file.size, file.type);
-
-      // Validate file size (5MB max)
-      if (file.size > 5 * 1024 * 1024) {
-        showMessage('error', 'Image size should be less than 5MB');
-        return;
-      }
-
-      // Validate file type
-      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-      if (!validTypes.includes(file.type)) {
-        showMessage('error', 'Please upload a valid image file (JPEG, PNG, or WebP)');
-        return;
-      }
-
-      setImageFile(file);
-      const previewUrl = URL.createObjectURL(file);
-      setImagePreview(previewUrl);
-      console.log('Image preview created:', previewUrl);
-      showMessage('success', 'Image selected successfully');
+    const files = Array.from(e.target.files);
+    
+    if (files.length + imageFiles.length > 5) {
+      showMessage('error', 'You can only upload up to 5 images');
+      return;
     }
+
+    // Validate file types
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    const invalidFiles = files.filter(file => !validTypes.includes(file.type));
+    
+    if (invalidFiles.length > 0) {
+      showMessage('error', 'Please upload only image files (JPEG, PNG, WebP)');
+      return;
+    }
+
+    // Validate file sizes (max 5MB per image)
+    const oversizedFiles = files.filter(file => file.size > 5 * 1024 * 1024);
+    if (oversizedFiles.length > 0) {
+      showMessage('error', 'Each image must be less than 5MB');
+      return;
+    }
+
+    setImageFiles([...imageFiles, ...files]);
+
+    // Create preview URLs
+    const newPreviewUrls = files.map(file => URL.createObjectURL(file));
+    setImagePreviews([...imagePreviews, ...newPreviewUrls]);
+    
+    showMessage('success', `${files.length} image(s) selected successfully`);
   };
 
-  // Upload Image to Cloudinary
-  const uploadImage = async () => {
-    if (!imageFile) {
-      console.log('No new image file, returning existing URL:', formData.imageUrl);
-      return formData.imageUrl || '';
+  const removeImage = (index) => {
+    const newImages = imageFiles.filter((_, i) => i !== index);
+    const newPreviews = imagePreviews.filter((_, i) => i !== index);
+    
+    // Revoke the URL to free memory
+    URL.revokeObjectURL(imagePreviews[index]);
+    
+    setImageFiles(newImages);
+    setImagePreviews(newPreviews);
+  };
+
+  // Upload Images to Cloudinary
+  const uploadImages = async () => {
+    if (imageFiles.length === 0) {
+      console.log('No new image files, returning existing URLs:', formData.imageUrls || []);
+      return formData.imageUrls || [];
     }
 
     try {
       setUploading(true);
-      console.log('Starting image upload to Cloudinary...');
+      console.log(`Starting upload of ${imageFiles.length} images to Cloudinary...`);
 
-      const result = await uploadToCloudinary(imageFile);
-      console.log('Upload successful:', result.url);
-      console.log('Public ID:', result.publicId);
+      const uploadedUrls = [];
+      for (let i = 0; i < imageFiles.length; i++) {
+        const file = imageFiles[i];
+        console.log(`Uploading image ${i + 1}/${imageFiles.length}:`, file.name);
+        
+        const result = await uploadToCloudinary(file);
+        uploadedUrls.push(result.url);
+        console.log(`Image ${i + 1} uploaded:`, result.url);
+      }
 
-      showMessage('success', '✅ Image uploaded successfully');
-      return result.url;
+      showMessage('success', `✅ ${uploadedUrls.length} image(s) uploaded successfully`);
+      return uploadedUrls;
     } catch (error) {
-      console.error('Error uploading image:', error);
-      console.error('Error message:', error.message);
-
+      console.error('Error uploading images:', error);
       showMessage('error', `❌ Upload failed: ${error.message}`);
-      throw new Error(`Failed to upload image: ${error.message}`);
+      throw new Error(`Failed to upload images: ${error.message}`);
     } finally {
       setUploading(false);
     }
@@ -346,6 +372,7 @@ const ManageHoardings = () => {
       price: '',
       availability: true,
       imageUrl: '',
+      imageUrls: [],
       visibilityScore: 85,
       rating: 0,
       tags: [],
@@ -357,6 +384,8 @@ const ManageHoardings = () => {
     });
     setImageFile(null);
     setImagePreview(null);
+    setImageFiles([]);
+    setImagePreviews([]);
     setShowModal(true);
   };
 
@@ -371,6 +400,7 @@ const ManageHoardings = () => {
       price: hoarding.price || '',
       availability: hoarding.availability !== false,
       imageUrl: hoarding.imageUrl || '',
+      imageUrls: hoarding.imageUrls || [],
       visibilityScore: hoarding.visibilityScore || 85,
       rating: hoarding.rating || 0,
       tags: hoarding.tags || [],
@@ -382,6 +412,8 @@ const ManageHoardings = () => {
     });
     setImagePreview(hoarding.imageUrl || null);
     setImageFile(null);
+    setImageFiles([]);
+    setImagePreviews(hoarding.imageUrls || []);
     setShowModal(true);
   };
 
@@ -444,10 +476,10 @@ const ManageHoardings = () => {
       console.log('Starting save process...');
       console.log('Current form data:', formData);
 
-      // Upload new image if selected
-      console.log('Uploading image...');
-      const imageUrl = await uploadImage();
-      console.log('Image URL after upload:', imageUrl);
+      // Upload new images if selected
+      console.log('Uploading images...');
+      const imageUrls = await uploadImages();
+      console.log('Image URLs after upload:', imageUrls);
 
       const hoardingData = {
         ...formData,
@@ -455,7 +487,8 @@ const ManageHoardings = () => {
         visibilityScore: parseInt(formData.visibilityScore) || 85,
         rating: parseFloat(formData.rating) || 0,
         views: parseInt(formData.views) || 0,
-        imageUrl,
+        imageUrls,
+        imageUrl: imageUrls.length > 0 ? imageUrls[0] : '', // Keep first image as primary for backward compatibility
       };
 
       console.log('Hoarding data before cleanup:', hoardingData);
@@ -483,10 +516,12 @@ const ManageHoardings = () => {
       if (editingHoarding) {
         console.log('Updating existing hoarding:', editingHoarding.id);
 
-        // Delete old image if new one uploaded
-        if (imageFile && editingHoarding.imageUrl && editingHoarding.imageUrl !== imageUrl) {
-          console.log('Deleting old image...');
-          await deleteImageFromStorage(editingHoarding.imageUrl);
+        // Delete old images if new ones uploaded
+        if (imageFiles.length > 0 && editingHoarding.imageUrls) {
+          console.log('Deleting old images...');
+          for (const oldUrl of editingHoarding.imageUrls) {
+            await deleteImageFromStorage(oldUrl);
+          }
         }
 
         // Update using category-based structure
@@ -540,6 +575,7 @@ const ManageHoardings = () => {
       price: '',
       availability: true,
       imageUrl: '',
+      imageUrls: [],
       visibilityScore: 85,
       rating: 0,
       tags: [],
@@ -551,6 +587,8 @@ const ManageHoardings = () => {
     });
     setImageFile(null);
     setImagePreview(null);
+    setImageFiles([]);
+    setImagePreviews([]);
   };
 
   // Category Management Functions
@@ -1208,32 +1246,58 @@ const ManageHoardings = () => {
                     </div>
                   </div>
 
-                  {/* Image Upload */}
+                  {/* Image Upload - Multiple Images */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Image
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Images (Up to 5 images for different angles)
                     </label>
-                    <div className="flex items-center space-x-4">
-                      <label className="flex-1 flex items-center justify-center px-4 py-2 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer hover:border-primary-500 transition-colors">
-                        <Upload className="w-5 h-5 mr-2 text-gray-400" />
+                    
+                    {/* Image Upload Button */}
+                    <div className="mb-3">
+                      <label className="flex items-center justify-center w-full px-4 py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer hover:border-primary-500 dark:hover:border-primary-500 transition-colors">
+                        <Upload className="w-5 h-5 mr-2 text-gray-500" />
                         <span className="text-sm text-gray-600 dark:text-gray-400">
-                          {imageFile ? imageFile.name : 'Choose Image'}
+                          {imageFiles.length === 0 && imagePreviews.length === 0
+                            ? 'Click to upload images'
+                            : `${imageFiles.length + imagePreviews.length}/5 images selected`}
                         </span>
                         <input
                           type="file"
                           accept="image/*"
+                          multiple
                           onChange={handleImageChange}
                           className="hidden"
+                          disabled={imageFiles.length + imagePreviews.length >= 5}
                         />
                       </label>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Max 5 images, each up to 5MB (JPEG, PNG, WebP)
+                      </p>
                     </div>
-                    {imagePreview && (
-                      <div className="mt-2">
-                        <img
-                          src={imagePreview}
-                          alt="Preview"
-                          className="w-full h-48 object-cover rounded-lg"
-                        />
+
+                    {/* Image Previews */}
+                    {imagePreviews.length > 0 && (
+                      <div className="grid grid-cols-3 gap-2">
+                        {imagePreviews.map((url, index) => (
+                          <div key={index} className="relative group">
+                            <img
+                              src={url}
+                              alt={`Preview ${index + 1}`}
+                              className="w-full h-32 object-cover rounded-lg border border-gray-300 dark:border-gray-600"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeImage(index)}
+                              className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Remove image"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                            <div className="absolute bottom-1 left-1 bg-black bg-opacity-60 text-white text-xs px-2 py-0.5 rounded">
+                              {index + 1}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>

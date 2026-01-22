@@ -10,7 +10,7 @@ import {
   LogOut,
   MapPin,
   Monitor,
-  Database
+  Briefcase
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -21,11 +21,11 @@ const Sidebar = ({ isOpen, onClose }) => {
   const navItems = [
     { path: '/admin/home', icon: Home, label: 'Home' },
     { path: '/admin/users', icon: Users, label: 'Manage Users' },
+    { path: '/admin/workers', icon: Briefcase, label: 'Manage Workers' },
     { path: '/admin/customers', icon: Users, label: 'Customers' },
     { path: '/admin/hoardings', icon: Building2, label: 'Manage Hoardings' },
     { path: '/admin/bookings', icon: Calendar, label: 'Manage Bookings' },
     { path: '/admin/hero', icon: Monitor, label: 'Hero Section' },
-    { path: '/admin/data-viewer', icon: Database, label: 'Data Viewer' },
     { path: '/admin/contacts', icon: MessageCircle, label: 'Contact Messages' },
     { path: '/admin/settings', icon: Settings, label: 'Settings' },
   ];
